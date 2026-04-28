@@ -191,7 +191,7 @@ private fun HeaderTitle(model: TransitAppModel) {
             color = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             shape = MaterialTheme.shapes.large,
-            tonalElevation = 1.dp,
+            tonalElevation = 0.dp,
         ) {
             Text(
                 "Now ${formatMinutesOfDay(model.nowMinutes)}",
@@ -304,7 +304,7 @@ private fun ActiveStatusPill() {
         color = statusColors.signalContainer,
         contentColor = statusColors.onSignalContainer,
         shape = CircleShape,
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
     ) {
         Text(
             "Watching now",
@@ -342,7 +342,7 @@ private fun CommuteSummaryCard(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = flatCardElevation(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -454,7 +454,7 @@ private fun ActiveWatchHero(
             contentColor = contentColor,
         ),
         border = BorderStroke(2.dp, borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        elevation = flatCardElevation(),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -887,7 +887,7 @@ private fun CommuteSetup(model: TransitAppModel) {
                 shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                elevation = flatCardElevation(),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -1318,7 +1318,7 @@ private fun UpcomingWindowRow(group: com.samex.kmt_hackathon.core.LeaveWindowGro
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.large,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
     ) {
         if (compact) {
             Column(
@@ -1385,7 +1385,7 @@ private fun PlacesScreen(model: TransitAppModel) {
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                elevation = flatCardElevation(),
             ) {
                 CompactAware { compact ->
                     if (compact) {
@@ -1516,7 +1516,7 @@ private fun SettingsOverviewCard(
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        elevation = flatCardElevation(),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -1777,7 +1777,7 @@ private fun SettingsPanel(
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.extraLarge,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1882,7 +1882,7 @@ private fun PermissionCard(model: TransitAppModel) {
             containerColor = if (denied) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
             contentColor = if (denied) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = flatCardElevation(),
     ) {
         CompactAware { compact ->
             val buttonVisible = model.notificationStatus != NotificationPermissionStatus.Unsupported
@@ -1926,6 +1926,7 @@ private fun ReplacementPrompt(onConfirm: () -> Unit, onCancel: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        elevation = flatCardElevation(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -2003,6 +2004,16 @@ private fun StepperMark(isPlus: Boolean) {
         }
     }
 }
+
+@Composable
+private fun flatCardElevation() = CardDefaults.cardElevation(
+    defaultElevation = 0.dp,
+    pressedElevation = 0.dp,
+    focusedElevation = 0.dp,
+    hoveredElevation = 0.dp,
+    draggedElevation = 0.dp,
+    disabledElevation = 0.dp,
+)
 
 @Composable
 private fun CompactAware(
@@ -2272,6 +2283,7 @@ private fun ErrorCard(message: String) {
             containerColor = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.onErrorContainer,
         ),
+        elevation = flatCardElevation(),
     ) {
         Text(
             text = message,
@@ -2287,6 +2299,7 @@ private fun EmptyCard(message: String) {
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = flatCardElevation(),
     ) {
         Text(
             message,
