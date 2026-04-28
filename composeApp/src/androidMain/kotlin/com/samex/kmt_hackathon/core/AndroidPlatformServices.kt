@@ -5,11 +5,16 @@ import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -78,7 +83,7 @@ private class AndroidNotificationScheduler(
     private val activityProvider: () -> ComponentActivity?,
 ) : NotificationScheduler {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    private val preferences = context.getSharedPreferences("leave_window_notifications", Context.MODE_PRIVATE)
+    private val preferences = context.getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
 
     override fun permissionStatus(): NotificationPermissionStatus =
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -90,16 +95,20 @@ private class AndroidNotificationScheduler(
         }
 
     override fun requestPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val activity = activityProvider() ?: return
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            activityProvider()?.let { activity ->
                 ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1801)
             }
+            return
         }
+        requestExactAlarmPermissionIfNeeded()
     }
 
     override fun schedule(plan: NotificationPlan) {
         createChannel(context)
+        clearDeliveredNotificationId(context, plan.id)
         saveScheduledIds(loadScheduledIds() + plan.id)
         val intent = Intent(context, NotificationReceiver::class.java).apply {
             putExtra(NotificationReceiver.EXTRA_ID, plan.id)
@@ -114,13 +123,53 @@ private class AndroidNotificationScheduler(
         )
 
         val triggerAtMillis = triggerAtMillis(plan.fireAtMinutes)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
-            } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+        scheduleAlarm(plan, triggerAtMillis, pendingIntent)
+    }
+
+    private fun scheduleAlarm(plan: NotificationPlan, triggerAtMillis: Long, pendingIntent: PendingIntent) {
+        if (canScheduleExactPendingIntentAlarms()) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                }
+                return
+            } catch (_: SecurityException) {
+                // Fall through to the permission-free in-process exact alarm path.
             }
+        }
+
+        scheduleInProcessExactAlarm(plan, triggerAtMillis, pendingIntent)
+        scheduleInexactBroadcastFallback(triggerAtMillis, pendingIntent)
+    }
+
+    private fun canScheduleExactPendingIntentAlarms(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+
+    private fun scheduleInProcessExactAlarm(
+        plan: NotificationPlan,
+        triggerAtMillis: Long,
+        fallbackPendingIntent: PendingIntent,
+    ) {
+        val listener = AlarmManager.OnAlarmListener {
+            removeInProcessAlarm(plan.id)
+            alarmManager.cancel(fallbackPendingIntent)
+            postNotification(context, plan.id, plan.title, plan.body)
+        }
+
+        replaceInProcessAlarm(plan.id, alarmManager, listener)
+        try {
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, plan.id, listener, alarmHandler)
         } catch (_: SecurityException) {
+            removeInProcessAlarm(plan.id)
+        }
+    }
+
+    private fun scheduleInexactBroadcastFallback(triggerAtMillis: Long, pendingIntent: PendingIntent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+        } else {
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
         }
     }
@@ -129,6 +178,8 @@ private class AndroidNotificationScheduler(
         val remainingIds = loadScheduledIds().toMutableSet()
         notificationIds.forEach { id ->
             remainingIds -= id
+            clearDeliveredNotificationId(context, id)
+            removeInProcessAlarm(id)?.let(alarmManager::cancel)
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 id.hashCode(),
@@ -167,35 +218,50 @@ private class AndroidNotificationScheduler(
         }
         return calendar.timeInMillis
     }
+
+    private fun requestExactAlarmPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()) return
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${context.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        try {
+            activityProvider()?.startActivity(intent) ?: context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            // Some Android builds do not expose this settings screen. The scheduler still uses a fallback.
+        }
+    }
+
+    companion object {
+        private val alarmHandler = Handler(Looper.getMainLooper())
+        private val inProcessAlarms = mutableMapOf<String, AlarmManager.OnAlarmListener>()
+
+        private fun replaceInProcessAlarm(
+            id: String,
+            alarmManager: AlarmManager,
+            listener: AlarmManager.OnAlarmListener,
+        ) {
+            synchronized(inProcessAlarms) {
+                inProcessAlarms.remove(id)
+            }?.let(alarmManager::cancel)
+            synchronized(inProcessAlarms) {
+                inProcessAlarms[id] = listener
+            }
+        }
+
+        private fun removeInProcessAlarm(id: String): AlarmManager.OnAlarmListener? =
+            synchronized(inProcessAlarms) {
+                inProcessAlarms.remove(id)
+            }
+    }
 }
 
 class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        createChannel(context)
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
         val id = intent.getStringExtra(EXTRA_ID).orEmpty()
-        val launchIntent = Intent(context, MainActivity::class.java)
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(contentIntent)
-            .setAutoCancel(true)
-            .build()
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        ) {
-            NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
-        }
+        postNotification(context, id, title, body)
     }
 
     companion object {
@@ -207,6 +273,8 @@ class NotificationReceiver : BroadcastReceiver() {
 
 private const val CHANNEL_ID = "leave_window_alerts"
 private const val KEY_SCHEDULED_IDS = "scheduled_notification_ids"
+private const val KEY_DELIVERED_IDS = "delivered_notification_ids"
+private const val NOTIFICATION_PREFERENCES = "leave_window_notifications"
 
 private fun createChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -216,4 +284,44 @@ private fun createChannel(context: Context) {
         NotificationManager.IMPORTANCE_HIGH,
     )
     context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+}
+
+private fun postNotification(context: Context, id: String, title: String, body: String) {
+    if (!canPostNotifications(context) || !markNotificationDelivered(context, id)) return
+    createChannel(context)
+    val launchIntent = Intent(context, MainActivity::class.java)
+    val contentIntent = PendingIntent.getActivity(
+        context,
+        0,
+        launchIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setContentIntent(contentIntent)
+        .setAutoCancel(true)
+        .build()
+
+    NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+}
+
+private fun canPostNotifications(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+private fun markNotificationDelivered(context: Context, id: String): Boolean {
+    val preferences = context.getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
+    val deliveredIds = preferences.getStringSet(KEY_DELIVERED_IDS, emptySet()).orEmpty()
+    if (id in deliveredIds) return false
+    preferences.edit().putStringSet(KEY_DELIVERED_IDS, deliveredIds + id).apply()
+    return true
+}
+
+private fun clearDeliveredNotificationId(context: Context, id: String) {
+    val preferences = context.getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
+    val deliveredIds = preferences.getStringSet(KEY_DELIVERED_IDS, emptySet()).orEmpty()
+    preferences.edit().putStringSet(KEY_DELIVERED_IDS, deliveredIds - id).apply()
 }

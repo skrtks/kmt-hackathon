@@ -50,6 +50,7 @@ Current first-version app architecture:
 - `core/TransitAppModel.kt` is the shared state holder for onboarding, saved commutes, settings, active watch sessions, and UI actions.
 - `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, and time.
 - Android/iOS/JVM actual implementations live under the matching platform source sets.
+- Android notifications use `AlarmManager` in `AndroidPlatformServices.kt`. When exact pending-intent alarms are allowed, the app uses them for process-independent delivery. On newer Android installs where `SCHEDULE_EXACT_ALARM` is denied by default, it also schedules a permission-free in-process exact alarm plus an inexact broadcast fallback so near-term smoke tests still fire while preserving a fallback if the process is gone.
 
 ### Mock Transit Data
 

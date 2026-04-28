@@ -56,6 +56,21 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun startWatchSchedulesUpcomingNotifications() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val scheduler = FakeModelNotificationScheduler()
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60 + 20, notificationScheduler = scheduler)
+
+        model.load()
+        model.startWatch("commute")
+
+        assertEquals(listOf(NotificationKind.WindowOpen, NotificationKind.FinalCall), scheduler.scheduled.map { it.kind })
+        assertEquals(listOf(8 * 60 + 26, 8 * 60 + 28), scheduler.scheduled.map { it.fireAtMinutes })
+    }
+
+    @Test
     fun scheduleEndStopsAutoStartedSessionAfterActiveWindowFinishes() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
@@ -70,18 +85,37 @@ class TransitAppModelTest {
         assertIs<AppScreen.Home>(model.screen)
     }
 
-    private fun model(repository: UserDataRepository, now: Int): TransitAppModel =
-        model(repository, FakeModelTimeProvider(now = now, weekday = Weekday.Monday))
+    private fun model(
+        repository: UserDataRepository,
+        now: Int,
+        notificationScheduler: NotificationScheduler = FakeModelNotificationScheduler(),
+    ): TransitAppModel =
+        model(repository, FakeModelTimeProvider(now = now, weekday = Weekday.Monday), notificationScheduler)
 
-    private fun model(repository: UserDataRepository, timeProvider: TimeProvider): TransitAppModel =
+    private fun model(
+        repository: UserDataRepository,
+        timeProvider: TimeProvider,
+        notificationScheduler: NotificationScheduler = FakeModelNotificationScheduler(),
+    ): TransitAppModel =
         TransitAppModel(
             transitRepository = ModelFakeTransitRepository,
             userDataRepository = repository,
-            notificationScheduler = FakeModelNotificationScheduler(),
+            notificationScheduler = notificationScheduler,
             timeProvider = timeProvider,
         )
 
     private fun testUserData(startedAutomatically: Boolean): UserData =
+        testUserData(
+            activeSession = PersistedWatchSession(
+                commuteId = "commute",
+                startedAtMinutes = 8 * 60,
+                silenced = false,
+                skippedGroupIds = emptyList(),
+                startedAutomatically = startedAutomatically,
+            ),
+        )
+
+    private fun testUserData(activeSession: PersistedWatchSession?): UserData =
         UserData(
             places = listOf(SavedPlace("place", "Home", GeoPoint(52.0, 4.0))),
             commutes = listOf(
@@ -97,13 +131,7 @@ class TransitAppModelTest {
                     ),
                 ),
             ),
-            activeSession = PersistedWatchSession(
-                commuteId = "commute",
-                startedAtMinutes = 8 * 60,
-                silenced = false,
-                skippedGroupIds = emptyList(),
-                startedAutomatically = startedAutomatically,
-            ),
+            activeSession = activeSession,
         )
 }
 
@@ -152,11 +180,15 @@ private class FakeModelKeyValueStore : KeyValueStore {
 }
 
 private class FakeModelNotificationScheduler : NotificationScheduler {
+    val scheduled = mutableListOf<NotificationPlan>()
+
     override fun permissionStatus(): NotificationPermissionStatus = NotificationPermissionStatus.Granted
 
     override fun requestPermission() = Unit
 
-    override fun schedule(plan: NotificationPlan) = Unit
+    override fun schedule(plan: NotificationPlan) {
+        scheduled += plan
+    }
 
     override fun cancel(notificationIds: List<String>) = Unit
 
