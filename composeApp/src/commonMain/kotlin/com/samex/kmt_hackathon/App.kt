@@ -15,7 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,7 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +45,8 @@ import com.samex.kmt_hackathon.core.UserDataRepository
 import com.samex.kmt_hackathon.core.WatchStatus
 import com.samex.kmt_hackathon.core.Weekday
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
+import com.samex.kmt_hackathon.transit.LineDirection
+import com.samex.kmt_hackathon.transit.TransitStop
 import kotlinx.coroutines.delay
 
 @Composable
@@ -191,7 +195,11 @@ private fun HomeScreen(model: TransitAppModel) {
                             )
                             Text("From ${origin?.name ?: "Unknown place"}")
                             Text(commute.schedule?.let {
-                                "Schedule ${it.days.joinToString { day -> day.name.take(3) }} ${formatMinutesOfDay(it.startMinutes)}-${formatMinutesOfDay(it.endMinutes)}"
+                                "Schedule ${it.days.joinToString { day -> day.name.take(3) }} ${formatMinutesOfDay(it.startMinutes)}-${
+                                    formatMinutesOfDay(
+                                        it.endMinutes
+                                    )
+                                }"
                             } ?: "Manual start only")
                             CommuteCardActions(
                                 compact = compact,
@@ -299,90 +307,291 @@ private fun PlaceEditor(model: TransitAppModel) {
 @Composable
 private fun CommuteSetup(model: TransitAppModel) {
     val draft = model.commuteDraft
-    Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Create saved commute", style = MaterialTheme.typography.titleLarge)
+    val initialStep = remember {
+        if (model.userData.places.size == 1 && draft.originPlaceId.isNotBlank()) {
+            CommuteSetupStep.Stop
+        } else {
+            CommuteSetupStep.Origin
+        }
+    }
+    var step by remember { mutableStateOf(initialStep) }
 
-        Section("1. Stop") {
-            model.stops().forEach { stop ->
-                SelectRow(
+    CompactAware { compact ->
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("New commute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            CommuteSetupSnapshot(model, draft)
+            SetupProgress(step)
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(step.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    when (step) {
+                        CommuteSetupStep.Origin -> OriginStep(model, draft)
+                        CommuteSetupStep.Stop -> StopStep(model, draft, compact)
+                        CommuteSetupStep.Lines -> LinesStep(model, draft, compact)
+                        CommuteSetupStep.Timing -> TimingStep(model, draft, compact)
+                        CommuteSetupStep.Review -> ReviewStep(model, draft)
+                    }
+                }
+            }
+
+            SetupNavigation(
+                compact = compact,
+                step = step,
+                canContinue = canContinueSetupStep(step, draft),
+                canSave = canSaveCommuteDraft(draft),
+                onBack = { step = previousSetupStep(step) },
+                onNext = { step = nextSetupStep(step) },
+                onCancel = { model.navigate(AppScreen.Home) },
+                onSave = model::saveCommute,
+            )
+        }
+    }
+}
+
+private enum class CommuteSetupStep(val title: String) {
+    Origin("Origin"),
+    Stop("Stop"),
+    Lines("Lines"),
+    Timing("Timing"),
+    Review("Review"),
+}
+
+@Composable
+private fun CommuteSetupSnapshot(model: TransitAppModel, draft: CommuteDraft) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("From ${originName(model, draft)}", style = MaterialTheme.typography.bodyMedium)
+        Text("Stop ${stopName(model, draft)}", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "Lines ${linesSummary(model, draft)}",
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SetupProgress(step: CommuteSetupStep) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "${step.ordinal + 1} of ${CommuteSetupStep.entries.size}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+        )
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun OriginStep(model: TransitAppModel, draft: CommuteDraft) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        model.userData.places.forEach { place ->
+            SetupChoice(
+                label = place.name,
+                selected = draft.originPlaceId == place.id,
+                onClick = { model.updateCommuteDraft(draft.copy(originPlaceId = place.id)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StopStep(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    var query by remember { mutableStateOf("") }
+    val stops = model.stops()
+    val visibleStops = stops
+        .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+        .sortedWith(compareBy<TransitStop> { if (it.id == draft.stopId) 0 else 1 }.thenBy { it.name })
+        .take(if (compact) 7 else 10)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Stop search") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (visibleStops.isEmpty()) {
+            Text("No matching stops.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            visibleStops.forEach { stop ->
+                SetupChoice(
                     label = stop.name,
                     selected = draft.stopId == stop.id,
                     onClick = { model.selectStop(stop.id) },
                 )
             }
         }
+        if (visibleStops.size < stops.size) {
+            Text(
+                "${visibleStops.size} of ${stops.size} stops",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
 
-        Section("2. Lines and directions") {
-            model.directionsForDraftStop().forEach { direction ->
+@Composable
+private fun LinesStep(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    var query by remember(draft.stopId) { mutableStateOf("") }
+    val directions = model.directionsForDraftStop()
+    val visibleDirections = directions
+        .filter { direction ->
+            val label = lineDirectionLabel(model, direction)
+            query.isBlank() || label.contains(query, ignoreCase = true)
+        }
+        .sortedWith(
+            compareBy<LineDirection> { direction ->
+                if (draft.selections.any { it.directionId == direction.id }) 0 else 1
+            }.thenBy { lineDirectionLabel(model, it) },
+        )
+        .take(if (compact) 7 else 10)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (directions.size > 5 || query.isNotBlank()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Line search") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (visibleDirections.isEmpty()) {
+            Text("No lines for this stop.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            visibleDirections.forEach { direction ->
                 val selected = draft.selections.any { it.directionId == direction.id }
-                SelectRow(
-                    label = "${model.lineShortName(direction.lineId)} to ${direction.headsign}",
+                SetupChoice(
+                    label = lineDirectionLabel(model, direction),
                     selected = selected,
                     onClick = { model.toggleSelection(direction) },
                 )
             }
         }
-
-        Section("3. Origin") {
-            model.userData.places.forEach { place ->
-                SelectRow(
-                    label = place.name,
-                    selected = draft.originPlaceId == place.id,
-                    onClick = { model.updateCommuteDraft(draft.copy(originPlaceId = place.id)) },
-                )
-            }
-        }
-
-        ArrivalBufferEditor(model, draft)
-        ScheduleEditor(model, draft)
-
-        CompactAware { compact ->
-            ActionButtons(compact) {
-                Button(onClick = model::saveCommute, modifier = responsiveButtonModifier(compact)) {
-                    ButtonLabel("Save commute")
-                }
-                OutlinedButton(
-                    onClick = { model.navigate(AppScreen.Home) },
-                    modifier = responsiveButtonModifier(compact),
-                ) {
-                    ButtonLabel("Cancel")
-                }
-            }
-        }
+        Text(
+            "${draft.selections.size} selected",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
 @Composable
-private fun ArrivalBufferEditor(model: TransitAppModel, draft: CommuteDraft) {
-    Section("4. Arrival buffer") {
+private fun TimingStep(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    val settings = model.userData.settings
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
+            Switch(
                 checked = draft.overrideArrivalBuffer,
                 onCheckedChange = { model.updateCommuteDraft(draft.copy(overrideArrivalBuffer = it)) },
             )
-            Text("Override global default")
+            Spacer(Modifier.width(8.dp))
+            Text("Custom arrival buffer")
         }
-        CompactAware { compact ->
-            if (compact) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ArrivalBufferFields(
-                        model = model,
-                        draft = draft,
-                        minModifier = Modifier.fillMaxWidth(),
-                        maxModifier = Modifier.fillMaxWidth(),
-                    )
+        Text(
+            "Default ${settings.defaultArrivalBuffer.minEarlyMinutes}-${settings.defaultArrivalBuffer.maxEarlyMinutes} min early",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ArrivalBufferFields(
+                    model = model,
+                    draft = draft,
+                    minModifier = Modifier.fillMaxWidth(),
+                    maxModifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ArrivalBufferFields(
+                    model = model,
+                    draft = draft,
+                    minModifier = Modifier.weight(1f),
+                    maxModifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = draft.scheduleEnabled,
+                onCheckedChange = { model.updateCommuteDraft(draft.copy(scheduleEnabled = it)) },
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Auto-start schedule")
+        }
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ScheduleTimeFields(
+                    model = model,
+                    draft = draft,
+                    startModifier = Modifier.fillMaxWidth(),
+                    endModifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ScheduleTimeFields(
+                    model = model,
+                    draft = draft,
+                    startModifier = Modifier.weight(1f),
+                    endModifier = Modifier.weight(1f),
+                )
+            }
+        }
+        WeekdayGrid(model, draft, compact)
+    }
+}
+
+@Composable
+private fun ReviewStep(model: TransitAppModel, draft: CommuteDraft) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ReviewLine("Origin", originName(model, draft))
+        ReviewLine("Stop", stopName(model, draft))
+        ReviewLine("Lines", linesSummary(model, draft))
+        ReviewLine("Arrival", arrivalBufferSummary(model, draft))
+        ReviewLine("Schedule", scheduleSummary(draft))
+    }
+}
+
+@Composable
+private fun WeekdayGrid(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    val daysPerRow = if (compact) 3 else 7
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Weekday.entries.chunked(daysPerRow).forEach { rowDays ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowDays.forEach { day ->
+                    val selected = day in draft.scheduleDays
+                    val modifier = Modifier.weight(1f)
+                    val onClick = {
+                        val days = if (selected) draft.scheduleDays - day else draft.scheduleDays + day
+                        model.updateCommuteDraft(draft.copy(scheduleDays = days))
+                    }
+                    if (selected) {
+                        Button(onClick = onClick, enabled = draft.scheduleEnabled, modifier = modifier) {
+                            ButtonLabel(day.name.take(3))
+                        }
+                    } else {
+                        OutlinedButton(onClick = onClick, enabled = draft.scheduleEnabled, modifier = modifier) {
+                            ButtonLabel(day.name.take(3))
+                        }
+                    }
                 }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ArrivalBufferFields(
-                        model = model,
-                        draft = draft,
-                        minModifier = Modifier.weight(1f),
-                        maxModifier = Modifier.weight(1f),
-                    )
+                repeat(daysPerRow - rowDays.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -390,51 +599,141 @@ private fun ArrivalBufferEditor(model: TransitAppModel, draft: CommuteDraft) {
 }
 
 @Composable
-private fun ScheduleEditor(model: TransitAppModel, draft: CommuteDraft) {
-    Section("5. Schedule") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = draft.scheduleEnabled,
-                onCheckedChange = { model.updateCommuteDraft(draft.copy(scheduleEnabled = it)) },
-            )
-            Text("Enable auto-start schedule")
+private fun SetupChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    val content: @Composable () -> Unit = {
+        Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (selected) {
+        Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            content()
         }
-        CompactAware { compact ->
-            if (compact) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ScheduleTimeFields(
-                        model = model,
-                        draft = draft,
-                        startModifier = Modifier.fillMaxWidth(),
-                        endModifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ScheduleTimeFields(
-                        model = model,
-                        draft = draft,
-                        startModifier = Modifier.weight(1f),
-                        endModifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-        Weekday.entries.forEach { day ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = day in draft.scheduleDays,
-                    onCheckedChange = {
-                        val days = if (day in draft.scheduleDays) draft.scheduleDays - day else draft.scheduleDays + day
-                        model.updateCommuteDraft(draft.copy(scheduleDays = days))
-                    },
-                    enabled = draft.scheduleEnabled,
-                )
-                Text(day.name)
-            }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            content()
         }
     }
 }
+
+@Composable
+private fun ReviewLine(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun SetupNavigation(
+    compact: Boolean,
+    step: CommuteSetupStep,
+    canContinue: Boolean,
+    canSave: Boolean,
+    onBack: () -> Unit,
+    onNext: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    ActionButtons(compact) {
+        OutlinedButton(
+            onClick = if (step == CommuteSetupStep.Origin) onCancel else onBack,
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel(if (step == CommuteSetupStep.Origin) "Cancel" else "Back")
+        }
+        Button(
+            onClick = if (step == CommuteSetupStep.Review) onSave else onNext,
+            enabled = if (step == CommuteSetupStep.Review) canSave else canContinue,
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel(if (step == CommuteSetupStep.Review) "Save commute" else "Next")
+        }
+    }
+}
+
+private fun nextSetupStep(step: CommuteSetupStep): CommuteSetupStep =
+    CommuteSetupStep.entries.getOrElse(step.ordinal + 1) { step }
+
+private fun previousSetupStep(step: CommuteSetupStep): CommuteSetupStep =
+    CommuteSetupStep.entries.getOrElse(step.ordinal - 1) { step }
+
+private fun canContinueSetupStep(step: CommuteSetupStep, draft: CommuteDraft): Boolean =
+    when (step) {
+        CommuteSetupStep.Origin -> draft.originPlaceId.isNotBlank()
+        CommuteSetupStep.Stop -> draft.stopId.isNotBlank()
+        CommuteSetupStep.Lines -> draft.selections.isNotEmpty()
+        CommuteSetupStep.Timing -> isTimingDraftValid(draft)
+        CommuteSetupStep.Review -> canSaveCommuteDraft(draft)
+    }
+
+private fun canSaveCommuteDraft(draft: CommuteDraft): Boolean =
+    draft.originPlaceId.isNotBlank() &&
+            draft.stopId.isNotBlank() &&
+            draft.selections.isNotEmpty() &&
+            isTimingDraftValid(draft)
+
+private fun isTimingDraftValid(draft: CommuteDraft): Boolean {
+    val bufferValid = if (draft.overrideArrivalBuffer) {
+        val min = draft.minEarlyMinutes.toIntOrNull()
+        val max = draft.maxEarlyMinutes.toIntOrNull()
+        min != null && max != null && min >= 0 && max >= min
+    } else {
+        true
+    }
+    val scheduleValid = if (draft.scheduleEnabled) {
+        val start = parseSetupMinutesOfDay(draft.scheduleStart)
+        val end = parseSetupMinutesOfDay(draft.scheduleEnd)
+        start != null && end != null && start < end && draft.scheduleDays.isNotEmpty()
+    } else {
+        true
+    }
+    return bufferValid && scheduleValid
+}
+
+private fun parseSetupMinutesOfDay(value: String): Int? {
+    val parts = value.split(":")
+    if (parts.size != 2) return null
+    val hour = parts[0].toIntOrNull() ?: return null
+    val minute = parts[1].toIntOrNull() ?: return null
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour * 60 + minute
+}
+
+private fun originName(model: TransitAppModel, draft: CommuteDraft): String =
+    model.userData.places.firstOrNull { it.id == draft.originPlaceId }?.name ?: "Not set"
+
+private fun stopName(model: TransitAppModel, draft: CommuteDraft): String =
+    draft.stopId.takeIf { it.isNotBlank() }?.let(model::stopName) ?: "Not set"
+
+private fun linesSummary(model: TransitAppModel, draft: CommuteDraft): String =
+    if (draft.selections.isEmpty()) {
+        "Not set"
+    } else {
+        draft.selections.joinToString { selection ->
+            "${model.lineShortName(selection.lineId)} to ${model.directionHeadsign(selection.directionId)}"
+        }
+    }
+
+private fun lineDirectionLabel(model: TransitAppModel, direction: LineDirection): String =
+    "${model.lineShortName(direction.lineId)} to ${direction.headsign}"
+
+private fun arrivalBufferSummary(model: TransitAppModel, draft: CommuteDraft): String {
+    val buffer = if (draft.overrideArrivalBuffer) {
+        "${draft.minEarlyMinutes}-${draft.maxEarlyMinutes}"
+    } else {
+        val default = model.userData.settings.defaultArrivalBuffer
+        "${default.minEarlyMinutes}-${default.maxEarlyMinutes}"
+    }
+    return "$buffer min early"
+}
+
+private fun scheduleSummary(draft: CommuteDraft): String =
+    if (draft.scheduleEnabled) {
+        "${
+            draft.scheduleDays.sortedBy { it.ordinal }.joinToString { it.name.take(3) }
+        } ${draft.scheduleStart}-${draft.scheduleEnd}"
+    } else {
+        "Manual start only"
+    }
 
 @Composable
 private fun WatchScreen(model: TransitAppModel) {
@@ -453,7 +752,11 @@ private fun WatchScreen(model: TransitAppModel) {
         state.errorMessage?.let { ErrorCard(it) }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(statusHeadline(state.currentStatus), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    statusHeadline(state.currentStatus),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
                 Text(state.stopName, style = MaterialTheme.typography.titleMedium)
                 Text("Walk time ${state.walkingTimeMinutes} min from ${state.origin.name}")
                 state.currentGroup?.let { group ->
@@ -682,14 +985,6 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         content()
-    }
-}
-
-@Composable
-private fun SelectRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = selected, onCheckedChange = { onClick() })
-        Text(label)
     }
 }
 
