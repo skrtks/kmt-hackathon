@@ -1,24 +1,45 @@
 package com.samex.kmt_hackathon
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContentPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +51,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -40,14 +68,19 @@ import com.samex.kmt_hackathon.core.CommuteDraft
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
 import com.samex.kmt_hackathon.core.PlatformServices
+import com.samex.kmt_hackathon.core.SavedCommute
 import com.samex.kmt_hackathon.core.TransitAppModel
 import com.samex.kmt_hackathon.core.UserDataRepository
+import com.samex.kmt_hackathon.core.WatchUiState
 import com.samex.kmt_hackathon.core.WatchStatus
 import com.samex.kmt_hackathon.core.Weekday
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
 import com.samex.kmt_hackathon.transit.LineDirection
 import com.samex.kmt_hackathon.transit.TransitStop
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 @Preview
@@ -69,36 +102,48 @@ fun App() {
         }
     }
 
-    MaterialTheme {
+    LeaveTheme {
         AppContent(model)
     }
 }
 
 @Composable
 private fun AppContent(model: TransitAppModel) {
-    Column(
+    val activeStatus = model.watchUiState()?.currentStatus
+    val backgroundColor by animateColorAsState(
+        targetValue = appBackgroundColor(activeStatus),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "appBackgroundColor",
+    )
+    Surface(
         modifier = Modifier
-            .safeContentPadding()
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .fillMaxSize(),
+        color = backgroundColor,
     ) {
-        Header(model)
-        model.errorMessage?.let { ErrorCard(it) }
-        model.pendingReplacementCommuteId?.let {
-            ReplacementPrompt(
-                onConfirm = model::confirmReplacement,
-                onCancel = model::cancelReplacement,
-            )
-        }
+        Column(
+            modifier = Modifier
+                .safeContentPadding()
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Header(model)
+            model.errorMessage?.let { ErrorCard(it) }
+            model.pendingReplacementCommuteId?.let {
+                ReplacementPrompt(
+                    onConfirm = model::confirmReplacement,
+                    onCancel = model::cancelReplacement,
+                )
+            }
 
-        when (val screen = model.screen) {
-            AppScreen.Home -> HomeScreen(model)
-            is AppScreen.PlaceEditor -> PlaceEditor(model)
-            AppScreen.CommuteSetup -> CommuteSetup(model)
-            AppScreen.Watch -> WatchScreen(model)
-            AppScreen.Settings -> SettingsScreen(model)
-            AppScreen.Places -> PlacesScreen(model)
+            when (val screen = model.screen) {
+                AppScreen.Home -> HomeScreen(model)
+                is AppScreen.PlaceEditor -> PlaceEditor(model)
+                AppScreen.CommuteSetup -> CommuteSetup(model)
+                AppScreen.Watch -> WatchScreen(model)
+                AppScreen.Settings -> SettingsScreen(model)
+                AppScreen.Places -> PlacesScreen(model)
+            }
         }
     }
 }
@@ -137,10 +182,22 @@ private fun HeaderTitle(model: TransitAppModel) {
             "Leave Window",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text("Now ${formatMinutesOfDay(model.nowMinutes)}", style = MaterialTheme.typography.bodyLarge)
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 1.dp,
+        ) {
+            Text(
+                "Now ${formatMinutesOfDay(model.nowMinutes)}",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
     }
 }
 
@@ -180,37 +237,14 @@ private fun HomeScreen(model: TransitAppModel) {
                 EmptyCard("No saved commutes yet. Create one from a saved place and mock stop.")
             } else {
                 model.userData.commutes.forEach { commute ->
-                    val origin = model.userData.places.firstOrNull { it.id == commute.originPlaceId }
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(model.stopName(commute.stopId), style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                commute.selections.joinToString { selection ->
-                                    "${model.lineShortName(selection.lineId)} to ${model.directionHeadsign(selection.directionId)}"
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text("From ${origin?.name ?: "Unknown place"}")
-                            Text(commute.schedule?.let {
-                                "Schedule ${it.days.joinToString { day -> day.name.take(3) }} ${formatMinutesOfDay(it.startMinutes)}-${
-                                    formatMinutesOfDay(
-                                        it.endMinutes
-                                    )
-                                }"
-                            } ?: "Manual start only")
-                            CommuteCardActions(
-                                compact = compact,
-                                autoStartEnabled = commute.autoStartEnabled,
-                                scheduleEnabled = commute.schedule != null,
-                                onAutoStartChange = { model.toggleCommuteAutoStart(commute.id) },
-                                onDelete = { model.deleteCommute(commute.id) },
-                                onStart = { model.startWatch(commute.id) },
-                            )
-                        }
-                    }
+                    CommuteSummaryCard(
+                        model = model,
+                        commute = commute,
+                        compact = compact,
+                        onAutoStartChange = { model.toggleCommuteAutoStart(commute.id) },
+                        onDelete = { model.deleteCommute(commute.id) },
+                        onStart = { model.startWatch(commute.id) },
+                    )
                 }
             }
         }
@@ -220,17 +254,14 @@ private fun HomeScreen(model: TransitAppModel) {
 @Composable
 private fun ActiveWatchCard(model: TransitAppModel, compact: Boolean) {
     val state = model.watchUiState() ?: return
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Active watch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(state.stopName, style = MaterialTheme.typography.bodyLarge)
-            state.currentGroup?.let { group ->
-                Text("${statusHeadline(state.currentStatus)} for ${formatMinutesOfDay(group.primaryWindow.departureTimeMinutes)}")
-                Text("Leave ${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-            } ?: Text("No upcoming departure window.")
+    ActiveWatchHero(
+        state = state,
+        nowMinutes = model.nowMinutes,
+        compact = compact,
+        routeLabels = commuteRouteLabels(model, state.commute),
+        summary = true,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { model.navigate(AppScreen.Watch) },
                 modifier = responsiveButtonModifier(compact),
@@ -240,6 +271,585 @@ private fun ActiveWatchCard(model: TransitAppModel, compact: Boolean) {
         }
     }
 }
+
+@Composable
+private fun CommuteSummaryCard(
+    model: TransitAppModel,
+    commute: SavedCommute,
+    compact: Boolean,
+    onAutoStartChange: () -> Unit,
+    onDelete: () -> Unit,
+    onStart: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = 520f, dampingRatio = 0.86f)),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        commuteOriginName(model, commute),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        model.stopName(commute.stopId),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            commuteOriginName(model, commute),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            model.stopName(commute.stopId),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    SchedulePill(commute)
+                }
+            }
+
+            if (compact) {
+                SchedulePill(commute)
+            }
+
+            RouteChipColumn(
+                labels = commuteRouteLabels(model, commute),
+                compact = compact,
+                maxItems = 4,
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            CommuteCardActions(
+                compact = compact,
+                autoStartEnabled = commute.autoStartEnabled,
+                scheduleEnabled = commute.schedule != null,
+                onAutoStartChange = onAutoStartChange,
+                onDelete = onDelete,
+                onStart = onStart,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActiveWatchHero(
+    state: WatchUiState,
+    nowMinutes: Int,
+    compact: Boolean,
+    routeLabels: List<String>,
+    summary: Boolean = false,
+    actions: @Composable () -> Unit,
+) {
+    val status = state.currentStatus
+    val containerColor by animateColorAsState(
+        targetValue = statusContainerColor(status),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "watchHeroContainer",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = statusContentColor(status),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "watchHeroContent",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = statusBorderColor(status),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "watchHeroBorder",
+    )
+    val currentGroup = state.currentGroup
+    val statusStyle = when {
+        summary -> MaterialTheme.typography.headlineMedium
+        compact -> MaterialTheme.typography.headlineLarge
+        else -> MaterialTheme.typography.displaySmall
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = 450f, dampingRatio = 0.9f)),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        border = BorderStroke(2.dp, borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (summary) 1.dp else 3.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(if (summary) 16.dp else 20.dp),
+            verticalArrangement = Arrangement.spacedBy(if (summary) 12.dp else 16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    statusHeadline(status),
+                    style = statusStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    state.stopName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = contentColor.copy(alpha = 0.82f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            RouteChipColumn(
+                labels = currentGroup?.let(::groupRouteLabels) ?: routeLabels,
+                compact = compact,
+                maxItems = if (summary) 3 else 5,
+            )
+
+            currentGroup?.let { group ->
+                if (!summary) {
+                    ScallopedDepartureBadge(
+                        status = status,
+                        departureText = formatMinutesOfDay(group.primaryWindow.departureTimeMinutes),
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                }
+                if (compact || summary) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WatchMetric("Leave window", "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
+                        WatchMetric("Departure", formatMinutesOfDay(group.primaryWindow.departureTimeMinutes))
+                        WatchMetric("Walk", "${state.walkingTimeMinutes} min from ${state.origin.name}")
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        WatchMetric(
+                            label = "Leave window",
+                            value = "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}",
+                            modifier = Modifier.weight(1f),
+                        )
+                        WatchMetric(
+                            label = "Departure",
+                            value = formatMinutesOfDay(group.primaryWindow.departureTimeMinutes),
+                            modifier = Modifier.weight(1f),
+                        )
+                        WatchMetric(
+                            label = "Walk",
+                            value = "${state.walkingTimeMinutes} min",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Text(
+                        "From ${state.origin.name}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor.copy(alpha = 0.78f),
+                    )
+                }
+                LeaveWindowProgress(
+                    windowOpenMinutes = group.windowOpenMinutes,
+                    finalCallMinutes = group.finalCallMinutes,
+                    nowMinutes = nowMinutes,
+                    status = status,
+                )
+            } ?: Text(
+                "No upcoming departure window.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = contentColor.copy(alpha = 0.82f),
+            )
+
+            if (state.silenced) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        "Notifications silenced after leaving.",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+
+            actions()
+        }
+    }
+}
+
+@Composable
+private fun ScallopedDepartureBadge(
+    status: WatchStatus?,
+    departureText: String,
+    modifier: Modifier = Modifier,
+) {
+    val fillColor by animateColorAsState(
+        targetValue = statusBadgeColor(status),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "departureBadgeFill",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = statusBorderColor(status),
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "departureBadgeBorder",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (status == WatchStatus.FinalCall) 1.04f else 1f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
+        label = "departureBadgeScale",
+    )
+    Box(
+        modifier = modifier
+            .size(178.dp)
+            .graphicsLayer(scaleX = scale, scaleY = scale),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val path = scallopedOvalPath(
+                width = size.width,
+                height = size.height,
+                lobes = 18,
+                amplitude = size.minDimension * 0.035f,
+            )
+            drawPath(path = path, color = fillColor)
+            drawPath(
+                path = path,
+                color = borderColor,
+                style = Stroke(width = 2.dp.toPx()),
+            )
+        }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                statusHeadline(status),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                departureText,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            Text(
+                "departure",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WatchMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LeaveWindowProgress(
+    windowOpenMinutes: Int,
+    finalCallMinutes: Int,
+    nowMinutes: Int,
+    status: WatchStatus?,
+) {
+    val targetFillColor = when (status) {
+        WatchStatus.FinalCall -> LeaveFinalCall
+        WatchStatus.Missed -> MaterialTheme.colorScheme.error
+        else -> LeaveSignal
+    }
+    val fillColor by animateColorAsState(
+        targetValue = targetFillColor,
+        animationSpec = TweenSpec(durationMillis = 300),
+        label = "windowProgressColor",
+    )
+    val progress by animateFloatAsState(
+        targetValue = leaveWindowRemainingFraction(windowOpenMinutes, finalCallMinutes, nowMinutes),
+        animationSpec = TweenSpec(durationMillis = 450),
+        label = "windowRemaining",
+    )
+    val waveAnimated = status == WatchStatus.LeaveNow || status == WatchStatus.FinalCall
+    val waveTransition = rememberInfiniteTransition(label = "windowWave")
+    val wavePhase by waveTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (waveAnimated) (2f * PI.toFloat()) else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "windowWavePhase",
+    )
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp),
+        ) {
+            val centerY = size.height / 2f
+            val strokeWidth = 6.dp.toPx()
+            drawLine(
+                color = trackColor,
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+            val progressWidth = (size.width * progress).coerceIn(0f, size.width)
+            if (progressWidth > 0f) {
+                val waveHeight = if (waveAnimated) 3.dp.toPx() else 0f
+                val waveLength = 18.dp.toPx()
+                val path = Path()
+                val steps = 48
+                for (step in 0..steps) {
+                    val x = progressWidth * (step / steps.toFloat())
+                    val y = centerY + sin(((x / waveLength) + wavePhase).toDouble()).toFloat() * waveHeight
+                    if (step == 0) {
+                        path.moveTo(x, y)
+                    } else {
+                        path.lineTo(x, y)
+                    }
+                }
+                drawPath(
+                    path = path,
+                    color = fillColor,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+                drawCircle(
+                    color = fillColor,
+                    radius = strokeWidth * 0.72f,
+                    center = Offset(progressWidth, centerY),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                formatMinutesOfDay(windowOpenMinutes),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                formatMinutesOfDay(finalCallMinutes),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RouteChipColumn(labels: List<String>, compact: Boolean, maxItems: Int) {
+    val visibleCount = if (compact) maxItems.coerceAtMost(3) else maxItems
+    val visibleLabels = labels.take(visibleCount)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        visibleLabels.forEachIndexed { index, label ->
+            RouteChip(label = label, accent = routeAccentColor(index))
+        }
+        if (labels.size > visibleCount) {
+            RouteChip(label = "+${labels.size - visibleCount} more", accent = MaterialTheme.colorScheme.tertiary)
+        }
+    }
+}
+
+@Composable
+private fun RouteChip(label: String, accent: Color) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SchedulePill(commute: SavedCommute) {
+    val label = commute.schedule?.let { schedule ->
+        "${schedule.days.joinToString { it.name.take(3) }} ${formatMinutesOfDay(schedule.startMinutes)}-${formatMinutesOfDay(schedule.endMinutes)}"
+    } ?: "Manual"
+    val enabled = commute.schedule != null && commute.autoStartEnabled
+    Surface(
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = CircleShape,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun appBackgroundColor(status: WatchStatus?): Color =
+    when (status) {
+        WatchStatus.LeaveNow -> Color(0xFFFFF7DF)
+        WatchStatus.FinalCall -> Color(0xFFFFF0D6)
+        WatchStatus.Missed -> Color(0xFFFFF1ED)
+        else -> MaterialTheme.colorScheme.background
+    }
+
+@Composable
+private fun statusContainerColor(status: WatchStatus?): Color =
+    when (status) {
+        WatchStatus.GetReady -> LeaveRouteContainer
+        WatchStatus.LeaveNow -> LeaveSignalContainer
+        WatchStatus.FinalCall -> LeaveFinalCallContainer
+        WatchStatus.Missed -> LeaveMissedContainer
+        null -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+@Composable
+private fun statusContentColor(status: WatchStatus?): Color =
+    when (status) {
+        WatchStatus.GetReady -> LeaveOnRouteContainer
+        WatchStatus.LeaveNow -> LeaveOnSignalContainer
+        WatchStatus.FinalCall -> LeaveOnFinalCallContainer
+        WatchStatus.Missed -> LeaveOnMissedContainer
+        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+@Composable
+private fun statusBorderColor(status: WatchStatus?): Color =
+    when (status) {
+        WatchStatus.GetReady -> LeaveRoute
+        WatchStatus.LeaveNow -> LeaveSignal
+        WatchStatus.FinalCall -> LeaveFinalCall
+        WatchStatus.Missed -> MaterialTheme.colorScheme.error
+        null -> MaterialTheme.colorScheme.outline
+    }
+
+@Composable
+private fun statusBadgeColor(status: WatchStatus?): Color =
+    when (status) {
+        WatchStatus.GetReady -> MaterialTheme.colorScheme.surfaceVariant
+        WatchStatus.LeaveNow -> MaterialTheme.colorScheme.surface
+        WatchStatus.FinalCall -> Color(0xFFFFE7C7)
+        WatchStatus.Missed -> MaterialTheme.colorScheme.errorContainer
+        null -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+@Composable
+private fun routeAccentColor(index: Int): Color =
+    when (index.mod(4)) {
+        0 -> MaterialTheme.colorScheme.primary
+        1 -> MaterialTheme.colorScheme.secondary
+        2 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+private fun leaveWindowRemainingFraction(windowOpenMinutes: Int, finalCallMinutes: Int, nowMinutes: Int): Float {
+    if (finalCallMinutes <= windowOpenMinutes) return 0f
+    return ((finalCallMinutes - nowMinutes).toFloat() / (finalCallMinutes - windowOpenMinutes).toFloat())
+        .coerceIn(0f, 1f)
+}
+
+private fun scallopedOvalPath(width: Float, height: Float, lobes: Int, amplitude: Float): Path {
+    val path = Path()
+    val centerX = width / 2f
+    val centerY = height / 2f
+    val baseRadiusX = width / 2f - amplitude * 2f
+    val baseRadiusY = height / 2f - amplitude * 2f
+    val steps = lobes * 10
+    for (step in 0..steps) {
+        val angle = (step / steps.toDouble()) * 2.0 * PI
+        val wave = sin(angle * lobes).toFloat() * amplitude
+        val x = centerX + cos(angle).toFloat() * (baseRadiusX + wave)
+        val y = centerY + sin(angle).toFloat() * (baseRadiusY + wave)
+        if (step == 0) {
+            path.moveTo(x, y)
+        } else {
+            path.lineTo(x, y)
+        }
+    }
+    path.close()
+    return path
+}
+
+private fun commuteOriginName(model: TransitAppModel, commute: SavedCommute): String =
+    model.userData.places.firstOrNull { it.id == commute.originPlaceId }?.name ?: "Unknown origin"
+
+private fun commuteRouteLabels(model: TransitAppModel, commute: SavedCommute): List<String> =
+    commute.selections.map { selection ->
+        "${model.lineShortName(selection.lineId)} to ${model.directionHeadsign(selection.directionId)}"
+    }
+
+private fun groupRouteLabels(group: com.samex.kmt_hackathon.core.LeaveWindowGroup): List<String> =
+    group.windows.map { window ->
+        "${window.lineShortName} to ${window.headsign} ${formatMinutesOfDay(window.departureTimeMinutes)}"
+    }
 
 @Composable
 private fun PlaceEditor(model: TransitAppModel) {
@@ -325,9 +935,15 @@ private fun CommuteSetup(model: TransitAppModel) {
             CommuteSetupSnapshot(model, draft)
             SetupProgress(step)
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(step.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -604,11 +1220,23 @@ private fun SetupChoice(label: String, selected: Boolean, onClick: () -> Unit) {
         Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
     if (selected) {
-        Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+        ) {
             content()
         }
     } else {
-        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+        ) {
             content()
         }
     }
@@ -750,67 +1378,97 @@ private fun WatchScreen(model: TransitAppModel) {
     ) {
         PermissionCard(model)
         state.errorMessage?.let { ErrorCard(it) }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    statusHeadline(state.currentStatus),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(state.stopName, style = MaterialTheme.typography.titleMedium)
-                Text("Walk time ${state.walkingTimeMinutes} min from ${state.origin.name}")
-                state.currentGroup?.let { group ->
-                    Text("Leave ${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-                    Text("Departure ${formatMinutesOfDay(group.primaryWindow.departureTimeMinutes)}")
-                    Text(group.windows.joinToString { "${it.lineShortName} to ${it.headsign}" })
-                } ?: Text("No upcoming departure window.")
-                if (state.silenced) Text("Notifications silenced after leaving.")
-                CompactAware { compact ->
-                    ActionButtons(compact) {
-                        Button(
-                            onClick = model::markLeaving,
-                            enabled = !state.silenced,
-                            modifier = responsiveButtonModifier(compact),
-                        ) {
-                            ButtonLabel("I'm leaving")
-                        }
-                        OutlinedButton(
-                            onClick = model::skipCurrentGroup,
-                            enabled = state.currentGroup != null && !state.silenced,
-                            modifier = responsiveButtonModifier(compact),
-                        ) {
-                            ButtonLabel("Skip this departure")
-                        }
-                        OutlinedButton(
-                            onClick = model::stopActiveSession,
-                            modifier = responsiveButtonModifier(compact),
-                        ) {
-                            ButtonLabel("Stop")
-                        }
+        CompactAware { compact ->
+            ActiveWatchHero(
+                state = state,
+                nowMinutes = model.nowMinutes,
+                compact = compact,
+                routeLabels = commuteRouteLabels(model, state.commute),
+            ) {
+                ActionButtons(compact) {
+                    Button(
+                        onClick = model::markLeaving,
+                        enabled = !state.silenced,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("I'm leaving")
+                    }
+                    OutlinedButton(
+                        onClick = model::skipCurrentGroup,
+                        enabled = state.currentGroup != null && !state.silenced,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Skip this departure")
+                    }
+                    OutlinedButton(
+                        onClick = model::stopActiveSession,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Stop")
                     }
                 }
             }
         }
 
         Text("Upcoming windows", style = MaterialTheme.typography.titleMedium)
-        state.groups.take(8).forEach { group ->
-            CompactAware { compact ->
-                if (compact) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(group.windows.joinToString { "${it.lineShortName} ${formatMinutesOfDay(it.departureTimeMinutes)}" })
-                        Text("${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(group.windows.joinToString { "${it.lineShortName} ${formatMinutesOfDay(it.departureTimeMinutes)}" })
-                        Text("${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-                    }
+        if (state.groups.isEmpty()) {
+            EmptyCard("No upcoming windows for this watch.")
+        } else {
+            state.groups.take(8).forEach { group ->
+                CompactAware { compact ->
+                    UpcomingWindowRow(group = group, compact = compact)
                 }
             }
-            HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun UpcomingWindowRow(group: com.samex.kmt_hackathon.core.LeaveWindowGroup, compact: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 1.dp,
+    ) {
+        if (compact) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RouteChipColumn(
+                    labels = groupRouteLabels(group),
+                    compact = true,
+                    maxItems = 3,
+                )
+                Text(
+                    "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    RouteChipColumn(
+                        labels = groupRouteLabels(group),
+                        compact = false,
+                        maxItems = 3,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -835,7 +1493,13 @@ private fun PlacesScreen(model: TransitAppModel) {
             }
         }
         model.userData.places.forEach { place ->
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
                 CompactAware { compact ->
                     if (compact) {
                         Column(
@@ -924,7 +1588,16 @@ private fun SettingsScreen(model: TransitAppModel) {
 @Composable
 private fun PermissionCard(model: TransitAppModel) {
     if (model.notificationStatus == NotificationPermissionStatus.Granted) return
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val denied = model.notificationStatus == NotificationPermissionStatus.Denied
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (denied) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (denied) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
         CompactAware { compact ->
             val buttonVisible = model.notificationStatus != NotificationPermissionStatus.Unsupported
             val message = if (model.notificationStatus == NotificationPermissionStatus.Unsupported) {
@@ -934,10 +1607,10 @@ private fun PermissionCard(model: TransitAppModel) {
             }
             if (compact || !buttonVisible) {
                 Column(
-                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(message)
+                    Text(message, style = MaterialTheme.typography.bodyLarge)
                     if (buttonVisible) {
                         Button(onClick = model::requestNotificationPermission, modifier = Modifier.fillMaxWidth()) {
                             ButtonLabel("Enable")
@@ -946,11 +1619,11 @@ private fun PermissionCard(model: TransitAppModel) {
                 }
             } else {
                 Row(
-                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(message, modifier = Modifier.weight(1f))
+                    Text(message, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.width(12.dp))
                     Button(onClick = model::requestNotificationPermission) {
                         ButtonLabel("Enable")
@@ -963,9 +1636,17 @@ private fun PermissionCard(model: TransitAppModel) {
 
 @Composable
 private fun ReplacementPrompt(onConfirm: () -> Unit, onCancel: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Another watch session is active.")
+            Text(
+                "Another watch session is active.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
             CompactAware { compact ->
                 ActionButtons(compact) {
                     Button(onClick = onConfirm, modifier = responsiveButtonModifier(compact)) {
@@ -1181,19 +1862,35 @@ private fun SettingStepperRow(label: String, onMinus: () -> Unit, onPlus: () -> 
 
 @Composable
 private fun ErrorCard(message: String) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
         Text(
             text = message,
             modifier = Modifier.padding(12.dp),
-            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyLarge,
         )
     }
 }
 
 @Composable
 private fun EmptyCard(message: String) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Text(message, modifier = Modifier.padding(16.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Text(
+            message,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
