@@ -216,30 +216,9 @@ private fun HomeScreen(model: TransitAppModel) {
                 ActiveWatchSection(model = model, state = state, compact = compact)
             }
 
-            ActionButtons(compact) {
-                Button(
-                    onClick = { model.beginCommuteSetup() },
-                    enabled = model.userData.places.isNotEmpty(),
-                    modifier = responsiveButtonModifier(compact),
-                ) {
-                    ButtonLabel("Add commute")
-                }
-                OutlinedButton(
-                    onClick = { model.beginPlaceEditor() },
-                    modifier = responsiveButtonModifier(compact),
-                ) {
-                    ButtonLabel("Add place")
-                }
-                OutlinedButton(
-                    onClick = { model.navigate(AppScreen.Places) },
-                    modifier = responsiveButtonModifier(compact),
-                ) {
-                    ButtonLabel("Places")
-                }
-            }
-
             if (model.userData.commutes.isEmpty()) {
                 EmptyCard("No saved commutes yet. Create one from a saved place and mock stop.")
+                HomeManagementActions(model = model, compact = compact)
             } else {
                 Text("Saved commutes", style = MaterialTheme.typography.titleMedium)
                 model.userData.commutes.forEach { commute ->
@@ -254,7 +233,33 @@ private fun HomeScreen(model: TransitAppModel) {
                         onStart = { model.startWatch(commute.id) },
                     )
                 }
+                HomeManagementActions(model = model, compact = compact)
             }
+        }
+    }
+}
+
+@Composable
+private fun HomeManagementActions(model: TransitAppModel, compact: Boolean) {
+    ActionButtons(compact) {
+        Button(
+            onClick = { model.beginCommuteSetup() },
+            enabled = model.userData.places.isNotEmpty(),
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel("Add commute")
+        }
+        OutlinedButton(
+            onClick = { model.beginPlaceEditor() },
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel("Add place")
+        }
+        OutlinedButton(
+            onClick = { model.navigate(AppScreen.Places) },
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel("Places")
         }
     }
 }
