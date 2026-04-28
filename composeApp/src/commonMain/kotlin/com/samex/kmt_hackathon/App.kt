@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
@@ -291,7 +292,7 @@ private fun HomeScreen(model: TransitAppModel) {
                 }
                 HomeManagementActions(model = model, compact = compact)
             }
-            Spacer(Modifier.height(4.dp))
+            BottomNavigationScrollSpacer()
         }
     }
 }
@@ -882,7 +883,9 @@ private fun groupRouteLabels(group: com.samex.kmt_hackathon.core.LeaveWindowGrou
 @Composable
 private fun PlaceEditor(model: TransitAppModel) {
     Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Create saved place", style = MaterialTheme.typography.titleLarge)
@@ -939,6 +942,7 @@ private fun PlaceEditor(model: TransitAppModel) {
                 }
             }
         }
+        BottomNavigationScrollSpacer()
     }
 }
 
@@ -954,9 +958,11 @@ private fun CommuteSetup(model: TransitAppModel) {
     }
     var step by remember { mutableStateOf(initialStep) }
 
-    CompactAware { compact ->
+    CompactAware(modifier = Modifier.fillMaxSize()) { compact ->
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("New commute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -995,6 +1001,7 @@ private fun CommuteSetup(model: TransitAppModel) {
                 onCancel = { model.navigate(AppScreen.Home) },
                 onSave = model::saveCommute,
             )
+            BottomNavigationScrollSpacer()
         }
     }
 }
@@ -1012,9 +1019,11 @@ private fun CommuteEditScreen(model: TransitAppModel) {
     val draft = model.commuteDraft
     var openSection by remember(draft.editingCommuteId) { mutableStateOf<CommuteEditSection?>(null) }
 
-    CompactAware { compact ->
+    CompactAware(modifier = Modifier.fillMaxSize()) { compact ->
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Edit commute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -1095,6 +1104,7 @@ private fun CommuteEditScreen(model: TransitAppModel) {
                     ButtonLabel("Save changes")
                 }
             }
+            BottomNavigationScrollSpacer()
         }
     }
 }
@@ -1658,7 +1668,12 @@ private fun UpcomingWindowRow(group: com.samex.kmt_hackathon.core.LeaveWindowGro
 
 @Composable
 private fun PlacesScreen(model: TransitAppModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         CompactAware { compact ->
             ActionButtons(compact) {
                 Button(
@@ -1712,6 +1727,7 @@ private fun PlacesScreen(model: TransitAppModel) {
                 }
             }
         }
+        BottomNavigationScrollSpacer()
     }
 }
 
@@ -1719,7 +1735,9 @@ private fun PlacesScreen(model: TransitAppModel) {
 private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier) {
     val settings = model.userData.settings
     Column(
-        modifier = modifier.verticalScroll(rememberScrollState()),
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         SettingsOverviewCard(
@@ -1793,6 +1811,7 @@ private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier
                 onThemeSelected = model::updateColorTheme,
             )
         }
+        BottomNavigationScrollSpacer()
     }
 }
 
@@ -2309,6 +2328,15 @@ private fun flatCardElevation() = CardDefaults.cardElevation(
     draggedElevation = 0.dp,
     disabledElevation = 0.dp,
 )
+
+@Composable
+private fun BottomNavigationScrollSpacer() {
+    Spacer(
+        modifier = Modifier
+            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+            .height(16.dp),
+    )
+}
 
 @Composable
 private fun CompactAware(
