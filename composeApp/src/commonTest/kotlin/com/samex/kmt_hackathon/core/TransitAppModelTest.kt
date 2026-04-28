@@ -85,6 +85,64 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun editingCommuteUpdatesSavedCommuteInPlace() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60)
+
+        model.load()
+        model.beginCommuteEdit("commute")
+
+        assertIs<AppScreen.CommuteEdit>(model.screen)
+        assertEquals("commute", model.commuteDraft.editingCommuteId)
+        assertEquals(setOf(CommuteLineSelection("line", "direction")), model.commuteDraft.selections)
+
+        model.updateCommuteDraft(
+            model.commuteDraft.copy(
+                overrideArrivalBuffer = true,
+                minEarlyMinutes = "2",
+                maxEarlyMinutes = "5",
+                scheduleEnabled = false,
+            ),
+        )
+        model.saveCommute()
+
+        val commute = model.userData.commutes.single()
+        assertIs<AppScreen.Home>(model.screen)
+        assertEquals("commute", commute.id)
+        assertEquals(ArrivalBuffer(minEarlyMinutes = 2, maxEarlyMinutes = 5), commute.arrivalBufferOverride)
+        assertEquals(null, commute.schedule)
+        assertEquals(false, commute.autoStartEnabled)
+        assertEquals(1, repository.load().commutes.size)
+    }
+
+    @Test
+    fun editingActiveCommuteRefreshesActiveWindows() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val scheduler = FakeModelNotificationScheduler()
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, now = 8 * 60 + 20, notificationScheduler = scheduler)
+
+        model.load()
+        model.beginCommuteEdit("commute")
+        model.updateCommuteDraft(
+            model.commuteDraft.copy(
+                overrideArrivalBuffer = true,
+                minEarlyMinutes = "2",
+                maxEarlyMinutes = "5",
+            ),
+        )
+        model.saveCommute()
+
+        assertEquals(8 * 60 + 24, model.activeGroups.first().windowOpenMinutes)
+        assertEquals(8 * 60 + 27, model.activeGroups.first().finalCallMinutes)
+        assertEquals(listOf(NotificationKind.WindowOpen, NotificationKind.FinalCall), scheduler.scheduled.map { it.kind })
+        assertEquals(listOf(8 * 60 + 24, 8 * 60 + 27), scheduler.scheduled.map { it.fireAtMinutes })
+    }
+
+    @Test
     fun scheduleEndStopsAutoStartedSessionAfterActiveWindowFinishes() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)

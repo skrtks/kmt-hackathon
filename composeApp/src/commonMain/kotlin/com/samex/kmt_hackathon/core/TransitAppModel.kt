@@ -11,6 +11,7 @@ sealed interface AppScreen {
     data object Home : AppScreen
     data class PlaceEditor(val onboarding: Boolean) : AppScreen
     data object CommuteSetup : AppScreen
+    data object CommuteEdit : AppScreen
     data object Settings : AppScreen
     data object Places : AppScreen
 }
@@ -28,6 +29,7 @@ data class PlaceDraft(
 )
 
 data class CommuteDraft(
+    val editingCommuteId: String? = null,
     val stopId: String = "",
     val originPlaceId: String = "",
     val selections: Set<CommuteLineSelection> = emptySet(),
@@ -186,6 +188,27 @@ class TransitAppModel(
         errorMessage = null
     }
 
+    fun beginCommuteEdit(commuteId: String) {
+        val commute = userData.commutes.firstOrNull { it.id == commuteId } ?: return
+        val defaultBuffer = userData.settings.defaultArrivalBuffer
+        val schedule = commute.schedule
+        commuteDraft = CommuteDraft(
+            editingCommuteId = commute.id,
+            stopId = commute.stopId,
+            originPlaceId = commute.originPlaceId,
+            selections = commute.selections.toSet(),
+            minEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).minEarlyMinutes.toString(),
+            maxEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).maxEarlyMinutes.toString(),
+            overrideArrivalBuffer = commute.arrivalBufferOverride != null,
+            scheduleEnabled = schedule != null,
+            scheduleDays = schedule?.days?.toSet() ?: CommuteDraft().scheduleDays,
+            scheduleStart = schedule?.startMinutes?.let(::formatMinutesOfDay) ?: CommuteDraft().scheduleStart,
+            scheduleEnd = schedule?.endMinutes?.let(::formatMinutesOfDay) ?: CommuteDraft().scheduleEnd,
+        )
+        screen = AppScreen.CommuteEdit
+        errorMessage = null
+    }
+
     fun updateCommuteDraft(draft: CommuteDraft) {
         commuteDraft = draft
     }
@@ -242,17 +265,32 @@ class TransitAppModel(
             null
         }
 
+        val existingCommute = commuteDraft.editingCommuteId?.let { editingId ->
+            userData.commutes.firstOrNull { it.id == editingId }
+        }
+        val autoStartEnabled = when {
+            schedule == null -> false
+            existingCommute == null -> true
+            existingCommute.schedule == null -> true
+            else -> existingCommute.autoStartEnabled
+        }
         val commute = SavedCommute(
-            id = newId("commute"),
+            id = existingCommute?.id ?: newId("commute"),
             originPlaceId = originId,
             stopId = commuteDraft.stopId,
             selections = commuteDraft.selections.sortedWith(compareBy<CommuteLineSelection> { it.lineId }.thenBy { it.directionId }),
             arrivalBufferOverride = arrivalBuffer,
             schedule = schedule,
-            autoStartEnabled = schedule != null,
+            autoStartEnabled = autoStartEnabled,
         )
 
-        val nextData = userData.copy(commutes = userData.commutes + commute)
+        val nextCommutes = if (existingCommute == null) {
+            userData.commutes + commute
+        } else {
+            userData.commutes.map { if (it.id == existingCommute.id) commute else it }
+        }
+        val activeEditedSession = userData.activeSession?.takeIf { it.commuteId == commute.id }
+        val nextData = userData.copy(commutes = nextCommutes)
         val validation = engine.validateSchedules(nextData.commutes)
         if (validation is ScheduleValidationResult.Overlap) {
             errorMessage = "That schedule overlaps another saved commute."
@@ -260,9 +298,13 @@ class TransitAppModel(
         }
 
         updateUserData(nextData)
+        if (activeEditedSession != null) {
+            refreshActiveSession(activeEditedSession)
+        } else {
+            errorMessage = null
+        }
         requestNotificationPermission()
         screen = AppScreen.Home
-        errorMessage = null
     }
 
     fun toggleCommuteAutoStart(commuteId: String) {
@@ -408,14 +450,7 @@ class TransitAppModel(
         val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return
         updateClock()
 
-        val departures = transitRepository.departuresFor(
-            stopId = commute.stopId,
-            selections = commute.selections,
-            fromTimeMinutes = (nowMinutes - 90).coerceAtLeast(0),
-            limit = 40,
-        )
-        val windows = engine.leaveWindows(commute, origin, userData.settings, departures)
-        val groups = engine.groupWindows(windows)
+        val groups = groupsFor(commute, origin)
 
         activeGroups = groups
         val session = PersistedWatchSession(
@@ -427,12 +462,7 @@ class TransitAppModel(
         )
         updateUserData(userData.copy(activeSession = session))
         notificationScheduler.cancelAll()
-        engine.notificationPlansForSession(
-            groups = groups,
-            sessionStartMinutes = nowMinutes,
-            skippedGroupIds = emptySet(),
-            silenced = false,
-        ).forEach(notificationScheduler::schedule)
+        scheduleNotificationsForSession(session, groups)
         screen = AppScreen.Home
         errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
     }
@@ -445,14 +475,46 @@ class TransitAppModel(
             updateUserData(userData.copy(activeSession = null))
             return false
         }
+        activeGroups = groupsFor(commute, origin)
+        return true
+    }
+
+    private fun refreshActiveSession(session: PersistedWatchSession) {
+        updateClock()
+        val commute = userData.commutes.firstOrNull { it.id == session.commuteId }
+        val origin = commute?.let { userData.places.firstOrNull { place -> place.id == it.originPlaceId } }
+        if (commute == null || origin == null) {
+            updateUserData(userData.copy(activeSession = null))
+            activeGroups = emptyList()
+            notificationScheduler.cancelAll()
+            errorMessage = null
+            return
+        }
+
+        val groups = groupsFor(commute, origin)
+        activeGroups = groups
+        notificationScheduler.cancelAll()
+        scheduleNotificationsForSession(session, groups)
+        errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
+    }
+
+    private fun groupsFor(commute: SavedCommute, origin: SavedPlace): List<LeaveWindowGroup> {
         val departures = transitRepository.departuresFor(
             stopId = commute.stopId,
             selections = commute.selections,
             fromTimeMinutes = (nowMinutes - 90).coerceAtLeast(0),
             limit = 40,
         )
-        activeGroups = engine.groupWindows(engine.leaveWindows(commute, origin, userData.settings, departures))
-        return true
+        return engine.groupWindows(engine.leaveWindows(commute, origin, userData.settings, departures))
+    }
+
+    private fun scheduleNotificationsForSession(session: PersistedWatchSession, groups: List<LeaveWindowGroup>) {
+        engine.notificationPlansForSession(
+            groups = groups,
+            sessionStartMinutes = nowMinutes,
+            skippedGroupIds = session.skippedGroupIds.toSet(),
+            silenced = session.silenced,
+        ).forEach(notificationScheduler::schedule)
     }
 
     private fun expireLeavingSessionIfNeeded() {

@@ -142,6 +142,7 @@ private fun AppContent(model: TransitAppModel) {
                 AppScreen.Home -> HomeScreen(model)
                 is AppScreen.PlaceEditor -> PlaceEditor(model)
                 AppScreen.CommuteSetup -> CommuteSetup(model)
+                AppScreen.CommuteEdit -> CommuteEditScreen(model)
                 AppScreen.Settings -> SettingsScreen(model)
                 AppScreen.Places -> PlacesScreen(model)
             }
@@ -249,6 +250,7 @@ private fun HomeScreen(model: TransitAppModel) {
                         isActive = activeState?.commute?.id == commute.id,
                         onAutoStartChange = { model.toggleCommuteAutoStart(commute.id) },
                         onDelete = { model.deleteCommute(commute.id) },
+                        onEdit = { model.beginCommuteEdit(commute.id) },
                         onStart = { model.startWatch(commute.id) },
                     )
                 }
@@ -333,6 +335,7 @@ private fun CommuteSummaryCard(
     isActive: Boolean,
     onAutoStartChange: () -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     onStart: () -> Unit,
 ) {
     Card(
@@ -405,6 +408,7 @@ private fun CommuteSummaryCard(
                 scheduleEnabled = commute.schedule != null,
                 onAutoStartChange = onAutoStartChange,
                 onDelete = onDelete,
+                onEdit = onEdit,
                 onStart = onStart,
                 startEnabled = !isActive,
                 startLabel = if (isActive) "Watching" else "Start",
@@ -918,6 +922,212 @@ private fun CommuteSetup(model: TransitAppModel) {
     }
 }
 
+private enum class CommuteEditSection {
+    Origin,
+    Stop,
+    Lines,
+    Arrival,
+    Schedule,
+}
+
+@Composable
+private fun CommuteEditScreen(model: TransitAppModel) {
+    val draft = model.commuteDraft
+    var openSection by remember(draft.editingCommuteId) { mutableStateOf<CommuteEditSection?>(null) }
+
+    CompactAware { compact ->
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Edit commute", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            CommuteEditSummary(model, draft)
+
+            CommuteEditSectionCard(
+                title = "Origin",
+                value = originName(model, draft),
+                expanded = openSection == CommuteEditSection.Origin,
+                onToggle = {
+                    openSection = openSection.toggle(CommuteEditSection.Origin)
+                },
+                compact = compact,
+            ) {
+                OriginStep(model, draft)
+            }
+
+            CommuteEditSectionCard(
+                title = "Stop",
+                value = stopName(model, draft),
+                expanded = openSection == CommuteEditSection.Stop,
+                onToggle = {
+                    openSection = openSection.toggle(CommuteEditSection.Stop)
+                },
+                compact = compact,
+            ) {
+                StopStep(model, draft, compact)
+            }
+
+            CommuteEditSectionCard(
+                title = "Lines",
+                value = linesSummary(model, draft),
+                expanded = openSection == CommuteEditSection.Lines,
+                onToggle = {
+                    openSection = openSection.toggle(CommuteEditSection.Lines)
+                },
+                compact = compact,
+            ) {
+                LinesStep(model, draft, compact)
+            }
+
+            CommuteEditSectionCard(
+                title = "Leave timing",
+                value = arrivalBufferSummary(model, draft),
+                expanded = openSection == CommuteEditSection.Arrival,
+                onToggle = {
+                    openSection = openSection.toggle(CommuteEditSection.Arrival)
+                },
+                compact = compact,
+            ) {
+                ArrivalBufferEditor(model, draft, compact)
+            }
+
+            CommuteEditSectionCard(
+                title = "Auto-start",
+                value = scheduleSummary(draft),
+                expanded = openSection == CommuteEditSection.Schedule,
+                onToggle = {
+                    openSection = openSection.toggle(CommuteEditSection.Schedule)
+                },
+                compact = compact,
+            ) {
+                ScheduleEditor(model, draft, compact)
+            }
+
+            ActionButtons(compact) {
+                OutlinedButton(
+                    onClick = { model.navigate(AppScreen.Home) },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Cancel")
+                }
+                Button(
+                    onClick = model::saveCommute,
+                    enabled = canSaveCommuteDraft(draft),
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Save changes")
+                }
+            }
+        }
+    }
+}
+
+private fun CommuteEditSection?.toggle(section: CommuteEditSection): CommuteEditSection? =
+    if (this == section) null else section
+
+@Composable
+private fun CommuteEditSummary(model: TransitAppModel, draft: CommuteDraft) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "${originName(model, draft)} to ${stopName(model, draft)}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                linesSummary(model, draft),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${arrivalBufferSummary(model, draft)} - ${scheduleSummary(draft)}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CommuteEditSectionCard(
+    title: String,
+    value: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    compact: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = 520f, dampingRatio = 0.86f)),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CommuteEditSectionText(title = title, value = value)
+                    OutlinedButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
+                        ButtonLabel(if (expanded) "Done" else "Change")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CommuteEditSectionText(
+                        title = title,
+                        value = value,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    OutlinedButton(onClick = onToggle, modifier = Modifier.widthIn(min = 112.dp)) {
+                        ButtonLabel(if (expanded) "Done" else "Change")
+                    }
+                }
+            }
+
+            if (expanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommuteEditSectionText(title: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 private enum class CommuteSetupStep(val title: String) {
     Origin("Origin"),
     Stop("Stop"),
@@ -972,7 +1182,7 @@ private fun StopStep(model: TransitAppModel, draft: CommuteDraft, compact: Boole
     val stops = model.stops()
     val visibleStops = stops
         .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-        .sortedWith(compareBy<TransitStop> { if (it.id == draft.stopId) 0 else 1 }.thenBy { it.name })
+        .sortedBy { it.name }
         .take(if (compact) 7 else 10)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1013,11 +1223,7 @@ private fun LinesStep(model: TransitAppModel, draft: CommuteDraft, compact: Bool
             val label = lineDirectionLabel(model, direction)
             query.isBlank() || label.contains(query, ignoreCase = true)
         }
-        .sortedWith(
-            compareBy<LineDirection> { direction ->
-                if (draft.selections.any { it.directionId == direction.id }) 0 else 1
-            }.thenBy { lineDirectionLabel(model, it) },
-        )
+        .sortedBy { lineDirectionLabel(model, it) }
         .take(if (compact) 7 else 10)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1052,6 +1258,15 @@ private fun LinesStep(model: TransitAppModel, draft: CommuteDraft, compact: Bool
 
 @Composable
 private fun TimingStep(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ArrivalBufferEditor(model, draft, compact)
+        HorizontalDivider()
+        ScheduleEditor(model, draft, compact)
+    }
+}
+
+@Composable
+private fun ArrivalBufferEditor(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
     val settings = model.userData.settings
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1085,9 +1300,12 @@ private fun TimingStep(model: TransitAppModel, draft: CommuteDraft, compact: Boo
                 )
             }
         }
+    }
+}
 
-        HorizontalDivider()
-
+@Composable
+private fun ScheduleEditor(model: TransitAppModel, draft: CommuteDraft, compact: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(
                 checked = draft.scheduleEnabled,
@@ -1207,6 +1425,7 @@ private fun SetupNavigation(
     onNext: () -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
+    saveLabel: String = "Save commute",
 ) {
     ActionButtons(compact) {
         OutlinedButton(
@@ -1220,7 +1439,7 @@ private fun SetupNavigation(
             enabled = if (step == CommuteSetupStep.Review) canSave else canContinue,
             modifier = responsiveButtonModifier(compact),
         ) {
-            ButtonLabel(if (step == CommuteSetupStep.Review) "Save commute" else "Next")
+            ButtonLabel(if (step == CommuteSetupStep.Review) saveLabel else "Next")
         }
     }
 }
@@ -2129,6 +2348,7 @@ private fun CommuteCardActions(
     scheduleEnabled: Boolean,
     onAutoStartChange: () -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     onStart: () -> Unit,
     startEnabled: Boolean = true,
     startLabel: String = "Start",
@@ -2145,6 +2365,9 @@ private fun CommuteCardActions(
         }
     }
     val actions: @Composable () -> Unit = {
+        OutlinedButton(onClick = onEdit, modifier = responsiveButtonModifier(compact)) {
+            ButtonLabel("Edit")
+        }
         OutlinedButton(onClick = onDelete, modifier = responsiveButtonModifier(compact)) {
             ButtonLabel("Delete")
         }
