@@ -28,14 +28,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContentPadding
+import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -130,9 +134,9 @@ private fun AppContent(model: TransitAppModel) {
     ) {
         Column(
             modifier = Modifier
-                .safeContentPadding()
+                .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 0.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Header(
@@ -146,7 +150,12 @@ private fun AppContent(model: TransitAppModel) {
                 )
             }
 
-            AnimatedScreenContent(model)
+            AnimatedScreenContent(
+                model = model,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            )
         }
     }
 }
@@ -184,8 +193,9 @@ private fun Header(model: TransitAppModel) {
 }
 
 @Composable
-private fun AnimatedScreenContent(model: TransitAppModel) {
+private fun AnimatedScreenContent(model: TransitAppModel, modifier: Modifier = Modifier) {
     AnimatedContent(
+        modifier = modifier,
         targetState = model.screen,
         transitionSpec = {
             when {
@@ -249,10 +259,12 @@ private fun HeaderTitle(model: TransitAppModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun HomeScreen(model: TransitAppModel) {
-    CompactAware { compact ->
+    CompactAware(modifier = Modifier.fillMaxSize()) { compact ->
         val activeState = model.watchUiState()
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PermissionCard(model)
@@ -279,6 +291,7 @@ private fun HomeScreen(model: TransitAppModel) {
                 }
                 HomeManagementActions(model = model, compact = compact)
             }
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -2300,10 +2313,11 @@ private fun flatCardElevation() = CardDefaults.cardElevation(
 
 @Composable
 private fun CompactAware(
+    modifier: Modifier = Modifier.fillMaxWidth(),
     threshold: Dp = 520.dp,
     content: @Composable (compact: Boolean) -> Unit,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = modifier) {
         content(maxWidth < threshold)
     }
 }
