@@ -47,6 +47,8 @@ actual object PlatformServices {
 
     actual fun liveActivityController(): LiveActivityController = AndroidLiveActivityController(requireContext())
 
+    actual fun isWearDevice(): Boolean = isWearDevice(requireContext())
+
     private fun requireContext(): Context {
         check(::applicationContext.isInitialized) {
             "PlatformServices.initialize(activity) must be called before App()"

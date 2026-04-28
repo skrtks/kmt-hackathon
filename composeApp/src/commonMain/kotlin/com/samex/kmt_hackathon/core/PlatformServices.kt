@@ -47,4 +47,5 @@ expect object PlatformServices {
     fun notificationScheduler(): NotificationScheduler
     fun timeProvider(): TimeProvider
     fun liveActivityController(): LiveActivityController
+    fun isWearDevice(): Boolean
 }

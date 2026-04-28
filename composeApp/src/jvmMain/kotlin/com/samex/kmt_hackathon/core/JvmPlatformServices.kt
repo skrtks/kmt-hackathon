@@ -12,6 +12,8 @@ actual object PlatformServices {
     actual fun timeProvider(): TimeProvider = JvmTimeProvider
 
     actual fun liveActivityController(): LiveActivityController = NoopLiveActivityController
+
+    actual fun isWearDevice(): Boolean = false
 }
 
 private object JvmKeyValueStore : KeyValueStore {

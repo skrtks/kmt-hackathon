@@ -27,6 +27,8 @@ actual object PlatformServices {
     actual fun timeProvider(): TimeProvider = IosTimeProvider
 
     actual fun liveActivityController(): LiveActivityController = IosLiveActivityController
+
+    actual fun isWearDevice(): Boolean = false
 }
 
 private object IosKeyValueStore : KeyValueStore {

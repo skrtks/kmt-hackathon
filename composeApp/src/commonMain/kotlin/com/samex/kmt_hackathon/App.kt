@@ -245,17 +245,19 @@ private fun HeaderTitle(model: TransitAppModel, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 0.dp,
-        ) {
-            Text(
-                "Now ${formatMinutesOfDay(model.nowMinutes)}",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelLarge,
-            )
+        if (!PlatformServices.isWearDevice()) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 0.dp,
+            ) {
+                Text(
+                    "Now ${formatMinutesOfDay(model.nowMinutes)}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
         }
     }
 }
