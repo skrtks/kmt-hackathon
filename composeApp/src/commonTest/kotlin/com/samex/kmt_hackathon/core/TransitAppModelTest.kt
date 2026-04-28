@@ -41,6 +41,21 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun startingSameCommuteReturnsToExistingWatchWithoutRestartingSession() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, now = 9 * 60)
+
+        model.load()
+        model.navigate(AppScreen.Home)
+        model.startWatch("commute")
+
+        assertIs<AppScreen.Watch>(model.screen)
+        assertEquals(8 * 60, model.userData.activeSession?.startedAtMinutes)
+    }
+
+    @Test
     fun scheduleEndStopsAutoStartedSessionAfterActiveWindowFinishes() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)

@@ -304,6 +304,10 @@ class TransitAppModel(
 
     fun startWatch(commuteId: String, manual: Boolean = true) {
         val active = userData.activeSession
+        if (active != null && active.commuteId == commuteId && manual) {
+            screen = AppScreen.Watch
+            return
+        }
         if (active != null && active.commuteId != commuteId && manual) {
             pendingReplacementCommuteId = commuteId
             return

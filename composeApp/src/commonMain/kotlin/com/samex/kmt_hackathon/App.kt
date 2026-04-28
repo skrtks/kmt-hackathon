@@ -147,7 +147,8 @@ private fun HomeScreen(model: TransitAppModel) {
             modifier = Modifier.verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-        PermissionCard(model)
+            PermissionCard(model)
+            ActiveWatchCard(model, compact)
 
             ActionButtons(compact) {
                 Button(
@@ -203,6 +204,30 @@ private fun HomeScreen(model: TransitAppModel) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWatchCard(model: TransitAppModel, compact: Boolean) {
+    val state = model.watchUiState() ?: return
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Active watch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(state.stopName, style = MaterialTheme.typography.bodyLarge)
+            state.currentGroup?.let { group ->
+                Text("${statusHeadline(state.currentStatus)} for ${formatMinutesOfDay(group.primaryWindow.departureTimeMinutes)}")
+                Text("Leave ${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
+            } ?: Text("No upcoming departure window.")
+            Button(
+                onClick = { model.navigate(AppScreen.Watch) },
+                modifier = responsiveButtonModifier(compact),
+            ) {
+                ButtonLabel("Return to watch")
             }
         }
     }
