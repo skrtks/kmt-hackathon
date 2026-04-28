@@ -11,7 +11,6 @@ sealed interface AppScreen {
     data object Home : AppScreen
     data class PlaceEditor(val onboarding: Boolean) : AppScreen
     data object CommuteSetup : AppScreen
-    data object Watch : AppScreen
     data object Settings : AppScreen
     data object Places : AppScreen
 }
@@ -105,7 +104,7 @@ class TransitAppModel(
         val restoredActiveSession = restoreActiveSession()
         screen = when {
             userData.places.isEmpty() -> AppScreen.PlaceEditor(onboarding = true)
-            restoredActiveSession -> AppScreen.Watch
+            restoredActiveSession -> AppScreen.Home
             else -> AppScreen.Home
         }
     }
@@ -308,7 +307,7 @@ class TransitAppModel(
     fun startWatch(commuteId: String, manual: Boolean = true) {
         val active = userData.activeSession
         if (active != null && active.commuteId == commuteId && manual) {
-            screen = AppScreen.Watch
+            screen = AppScreen.Home
             return
         }
         if (active != null && active.commuteId != commuteId && manual) {
@@ -426,7 +425,7 @@ class TransitAppModel(
             skippedGroupIds = emptySet(),
             silenced = false,
         ).forEach(notificationScheduler::schedule)
-        screen = AppScreen.Watch
+        screen = AppScreen.Home
         errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
     }
 

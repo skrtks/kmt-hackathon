@@ -13,7 +13,7 @@ import kotlin.test.assertNotNull
 
 class TransitAppModelTest {
     @Test
-    fun loadRestoresManualActiveSessionToWatchScreen() {
+    fun loadRestoresManualActiveSessionToHome() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
         repository.save(testUserData(startedAutomatically = false))
@@ -21,7 +21,7 @@ class TransitAppModelTest {
 
         model.load()
 
-        assertIs<AppScreen.Watch>(model.screen)
+        assertIs<AppScreen.Home>(model.screen)
         assertNotNull(model.watchUiState()?.currentGroup)
     }
 
@@ -37,11 +37,11 @@ class TransitAppModelTest {
         model.tick()
 
         assertNotNull(model.userData.activeSession)
-        assertIs<AppScreen.Watch>(model.screen)
+        assertIs<AppScreen.Home>(model.screen)
     }
 
     @Test
-    fun startingSameCommuteReturnsToExistingWatchWithoutRestartingSession() {
+    fun startingSameCommuteKeepsExistingSessionOnHome() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
         repository.save(testUserData(startedAutomatically = false))
@@ -51,7 +51,7 @@ class TransitAppModelTest {
         model.navigate(AppScreen.Home)
         model.startWatch("commute")
 
-        assertIs<AppScreen.Watch>(model.screen)
+        assertIs<AppScreen.Home>(model.screen)
         assertEquals(8 * 60, model.userData.activeSession?.startedAtMinutes)
     }
 

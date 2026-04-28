@@ -223,8 +223,8 @@ Content:
 
 Behavior:
 
-- Dominant on active watch screen.
-- Also summarized on home when watch is active.
+- Dominant active-watch surface on Home.
+- Replaces the old separate active-watch screen so the user always returns to one dashboard.
 - State color changes by timing status.
 
 ### `LeaveWindowProgress`
@@ -302,12 +302,13 @@ Home should answer:
 
 Desired structure:
 
-- Active watch summary hero if a session is active.
+- Full active-watch hero if a session is active.
+- Inline watch actions and the next few leave windows directly under the hero.
 - Commute cards below.
 - Floating or prominent "add commute" action.
 - Places/settings as secondary actions.
 
-### Active Watch
+### Active Watch Section
 
 This is the emotional core of the app.
 

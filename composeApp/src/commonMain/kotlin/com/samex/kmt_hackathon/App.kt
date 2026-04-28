@@ -138,7 +138,6 @@ private fun AppContent(model: TransitAppModel) {
                 AppScreen.Home -> HomeScreen(model)
                 is AppScreen.PlaceEditor -> PlaceEditor(model)
                 AppScreen.CommuteSetup -> CommuteSetup(model)
-                AppScreen.Watch -> WatchScreen(model)
                 AppScreen.Settings -> SettingsScreen(model)
                 AppScreen.Places -> PlacesScreen(model)
             }
@@ -202,12 +201,15 @@ private fun HeaderTitle(model: TransitAppModel) {
 @Composable
 private fun HomeScreen(model: TransitAppModel) {
     CompactAware { compact ->
+        val activeState = model.watchUiState()
         Column(
             modifier = Modifier.verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PermissionCard(model)
-            ActiveWatchCard(model, compact)
+            activeState?.let { state ->
+                ActiveWatchSection(model = model, state = state, compact = compact)
+            }
 
             ActionButtons(compact) {
                 Button(
@@ -234,11 +236,13 @@ private fun HomeScreen(model: TransitAppModel) {
             if (model.userData.commutes.isEmpty()) {
                 EmptyCard("No saved commutes yet. Create one from a saved place and mock stop.")
             } else {
+                Text("Saved commutes", style = MaterialTheme.typography.titleMedium)
                 model.userData.commutes.forEach { commute ->
                     CommuteSummaryCard(
                         model = model,
                         commute = commute,
                         compact = compact,
+                        isActive = activeState?.commute?.id == commute.id,
                         onAutoStartChange = { model.toggleCommuteAutoStart(commute.id) },
                         onDelete = { model.deleteCommute(commute.id) },
                         onStart = { model.startWatch(commute.id) },
@@ -250,23 +254,69 @@ private fun HomeScreen(model: TransitAppModel) {
 }
 
 @Composable
-private fun ActiveWatchCard(model: TransitAppModel, compact: Boolean) {
-    val state = model.watchUiState() ?: return
+private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, compact: Boolean) {
     ActiveWatchHero(
         state = state,
         nowSecondsOfDay = model.nowSecondsOfDay,
         compact = compact,
         routeLabels = commuteRouteLabels(model, state.commute),
-        summary = true,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionButtons(compact) {
             Button(
-                onClick = { model.navigate(AppScreen.Watch) },
+                onClick = model::markLeaving,
+                enabled = !state.silenced,
                 modifier = responsiveButtonModifier(compact),
             ) {
-                ButtonLabel("Return to watch")
+                ButtonLabel("I'm leaving")
+            }
+            OutlinedButton(
+                onClick = model::skipCurrentGroup,
+                enabled = state.currentGroup != null && !state.silenced,
+                modifier = responsiveButtonModifier(compact),
+            ) {
+                ButtonLabel("Skip this departure")
+            }
+            OutlinedButton(
+                onClick = model::stopActiveSession,
+                modifier = responsiveButtonModifier(compact),
+            ) {
+                ButtonLabel("Stop")
             }
         }
+    }
+
+    if (state.groups.isNotEmpty()) {
+        Text("Next windows", style = MaterialTheme.typography.titleMedium)
+        state.groups.take(5).forEach { group ->
+            UpcomingWindowRow(group = group, compact = compact)
+        }
+    }
+}
+
+@Composable
+private fun ActiveStatusPill() {
+    Surface(
+        color = LeaveSignalContainer,
+        contentColor = LeaveOnSignalContainer,
+        shape = CircleShape,
+        tonalElevation = 1.dp,
+    ) {
+        Text(
+            "Watching now",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ScheduleOrActivePill(commute: SavedCommute, isActive: Boolean) {
+    if (isActive) {
+        ActiveStatusPill()
+    } else {
+        SchedulePill(commute)
     }
 }
 
@@ -275,6 +325,7 @@ private fun CommuteSummaryCard(
     model: TransitAppModel,
     commute: SavedCommute,
     compact: Boolean,
+    isActive: Boolean,
     onAutoStartChange: () -> Unit,
     onDelete: () -> Unit,
     onStart: () -> Unit,
@@ -327,12 +378,12 @@ private fun CommuteSummaryCard(
                         )
                     }
                     Spacer(Modifier.width(12.dp))
-                    SchedulePill(commute)
+                    ScheduleOrActivePill(commute = commute, isActive = isActive)
                 }
             }
 
             if (compact) {
-                SchedulePill(commute)
+                ScheduleOrActivePill(commute = commute, isActive = isActive)
             }
 
             RouteChipColumn(
@@ -350,6 +401,8 @@ private fun CommuteSummaryCard(
                 onAutoStartChange = onAutoStartChange,
                 onDelete = onDelete,
                 onStart = onStart,
+                startEnabled = !isActive,
+                startLabel = if (isActive) "Watching" else "Start",
             )
         }
     }
@@ -361,7 +414,6 @@ private fun ActiveWatchHero(
     nowSecondsOfDay: Int,
     compact: Boolean,
     routeLabels: List<String>,
-    summary: Boolean = false,
     actions: @Composable () -> Unit,
 ) {
     val status = state.currentStatus
@@ -381,11 +433,7 @@ private fun ActiveWatchHero(
         label = "watchHeroBorder",
     )
     val currentGroup = state.currentGroup
-    val statusStyle = when {
-        summary -> MaterialTheme.typography.headlineMedium
-        compact -> MaterialTheme.typography.headlineLarge
-        else -> MaterialTheme.typography.displaySmall
-    }
+    val statusStyle = if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displaySmall
     val headline = statusHeadline(
         status = status,
         departureTimeMinutes = currentGroup?.primaryWindow?.departureTimeMinutes,
@@ -401,11 +449,11 @@ private fun ActiveWatchHero(
             contentColor = contentColor,
         ),
         border = BorderStroke(2.dp, borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (summary) 1.dp else 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     ) {
         Column(
-            modifier = Modifier.padding(if (summary) 16.dp else 20.dp),
-            verticalArrangement = Arrangement.spacedBy(if (summary) 12.dp else 16.dp),
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
@@ -428,11 +476,11 @@ private fun ActiveWatchHero(
             RouteChipColumn(
                 labels = currentGroup?.let(::groupRouteLabels) ?: routeLabels,
                 compact = compact,
-                maxItems = if (summary) 3 else 5,
+                maxItems = 5,
             )
 
             currentGroup?.let { group ->
-                if (compact || summary) {
+                if (compact) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         WatchMetric("Leave window", "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
                         WatchMetric("Walk", "${state.walkingTimeMinutes} min from ${state.origin.name}")
@@ -1249,66 +1297,6 @@ private fun scheduleSummary(draft: CommuteDraft): String =
     }
 
 @Composable
-private fun WatchScreen(model: TransitAppModel) {
-    val state = model.watchUiState()
-    if (state == null) {
-        EmptyCard("No active watch session.")
-        Button(onClick = { model.navigate(AppScreen.Home) }) { Text("Back home") }
-        return
-    }
-
-    Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        PermissionCard(model)
-        state.errorMessage?.let { ErrorCard(it) }
-        CompactAware { compact ->
-            ActiveWatchHero(
-                state = state,
-                nowSecondsOfDay = model.nowSecondsOfDay,
-                compact = compact,
-                routeLabels = commuteRouteLabels(model, state.commute),
-            ) {
-                ActionButtons(compact) {
-                    Button(
-                        onClick = model::markLeaving,
-                        enabled = !state.silenced,
-                        modifier = responsiveButtonModifier(compact),
-                    ) {
-                        ButtonLabel("I'm leaving")
-                    }
-                    OutlinedButton(
-                        onClick = model::skipCurrentGroup,
-                        enabled = state.currentGroup != null && !state.silenced,
-                        modifier = responsiveButtonModifier(compact),
-                    ) {
-                        ButtonLabel("Skip this departure")
-                    }
-                    OutlinedButton(
-                        onClick = model::stopActiveSession,
-                        modifier = responsiveButtonModifier(compact),
-                    ) {
-                        ButtonLabel("Stop")
-                    }
-                }
-            }
-        }
-
-        Text("Upcoming windows", style = MaterialTheme.typography.titleMedium)
-        if (state.groups.isEmpty()) {
-            EmptyCard("No upcoming windows for this watch.")
-        } else {
-            state.groups.take(8).forEach { group ->
-                CompactAware { compact ->
-                    UpcomingWindowRow(group = group, compact = compact)
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun UpcomingWindowRow(group: com.samex.kmt_hackathon.core.LeaveWindowGroup, compact: Boolean) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1920,6 +1908,8 @@ private fun CommuteCardActions(
     onAutoStartChange: () -> Unit,
     onDelete: () -> Unit,
     onStart: () -> Unit,
+    startEnabled: Boolean = true,
+    startLabel: String = "Start",
 ) {
     val autoStartControl: @Composable () -> Unit = {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1936,8 +1926,12 @@ private fun CommuteCardActions(
         OutlinedButton(onClick = onDelete, modifier = responsiveButtonModifier(compact)) {
             ButtonLabel("Delete")
         }
-        Button(onClick = onStart, modifier = responsiveButtonModifier(compact)) {
-            ButtonLabel("Start")
+        Button(
+            onClick = onStart,
+            enabled = startEnabled,
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel(startLabel)
         }
     }
 

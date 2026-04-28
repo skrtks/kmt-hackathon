@@ -150,7 +150,7 @@ Merge rule:
 
 Skip behavior:
 
-- The watch screen provides an in-app "skip this departure" action.
+- Home provides an in-app "skip this departure" action while a watch is active.
 - Skipping suppresses all remaining alerts for the current departure.
 - If the current item is a merged window group, skipping suppresses all remaining alerts for that merged group. This keeps the action aligned with what the user sees and avoids duplicate alerts for the same practical leaving opportunity.
 
@@ -168,7 +168,7 @@ When a session starts:
 - Fetch departures from the transit API.
 - Calculate leave windows for selected line/direction pairs.
 - Schedule upcoming window-open and final-call notifications for viable windows.
-- Show the active watch screen.
+- Return to Home and show the active watch dashboard.
 
 If watching starts while a leave window is already open:
 
@@ -271,9 +271,9 @@ Each row should show:
 
 Richer dashboard or calendar views can come later.
 
-### Watch Screen
+### Home With Active Watch
 
-The active watch screen should show:
+When a watch is active, Home becomes the active-watch dashboard instead of sending the user to a separate watch screen. It should show:
 
 - Primary current/next actionable departure panel.
 - Action headline, such as "Get ready," "Leave now," or "Final call."
