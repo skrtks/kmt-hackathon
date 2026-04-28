@@ -25,6 +25,8 @@ actual object PlatformServices {
     actual fun notificationScheduler(): NotificationScheduler = IosNotificationScheduler
 
     actual fun timeProvider(): TimeProvider = IosTimeProvider
+
+    actual fun liveActivityController(): LiveActivityController = IosLiveActivityController
 }
 
 private object IosKeyValueStore : KeyValueStore {

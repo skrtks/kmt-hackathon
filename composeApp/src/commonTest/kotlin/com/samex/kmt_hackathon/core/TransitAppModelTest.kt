@@ -71,11 +71,16 @@ class TransitAppModelTest {
     }
 
     @Test
-    fun updateColorThemePersistsThemeChoice() {
+    fun leavingSessionDoesNotRestartLiveActivityOnTick() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
+        val liveActivityController = RecordingLiveActivityController()
         repository.save(testUserData(activeSession = null))
-        val model = model(repository, now = 8 * 60)
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            liveActivityController = liveActivityController,
+        )
 
         model.load()
         model.updateColorTheme(AppColorTheme.Berry)
@@ -179,19 +184,22 @@ class TransitAppModelTest {
         repository: UserDataRepository,
         now: Int,
         notificationScheduler: NotificationScheduler = FakeModelNotificationScheduler(),
+        liveActivityController: LiveActivityController = NoopLiveActivityController,
     ): TransitAppModel =
-        model(repository, FakeModelTimeProvider(now = now, weekday = Weekday.Monday), notificationScheduler)
+        model(repository, FakeModelTimeProvider(now = now, weekday = Weekday.Monday), notificationScheduler, liveActivityController)
 
     private fun model(
         repository: UserDataRepository,
         timeProvider: TimeProvider,
         notificationScheduler: NotificationScheduler = FakeModelNotificationScheduler(),
+        liveActivityController: LiveActivityController = NoopLiveActivityController,
     ): TransitAppModel =
         TransitAppModel(
             transitRepository = ModelFakeTransitRepository,
             userDataRepository = repository,
             notificationScheduler = notificationScheduler,
             timeProvider = timeProvider,
+            liveActivityController = liveActivityController,
         )
 
     private fun testUserData(startedAutomatically: Boolean): UserData =
@@ -283,6 +291,33 @@ private class FakeModelNotificationScheduler : NotificationScheduler {
     override fun cancel(notificationIds: List<String>) = Unit
 
     override fun cancelAll() = Unit
+}
+
+private class RecordingLiveActivityController(
+    private val supported: Boolean = true,
+) : LiveActivityController {
+    val starts = mutableListOf<LiveActivitySnapshot>()
+    val updates = mutableListOf<LiveActivitySnapshot>()
+    val ends = mutableListOf<Pair<LiveActivitySnapshot?, LiveActivityEndReason>>()
+    private var running = false
+
+    override fun isSupported(): Boolean = supported
+
+    override fun isActivityRunning(): Boolean = running
+
+    override fun start(snapshot: LiveActivitySnapshot) {
+        starts += snapshot
+        running = true
+    }
+
+    override fun update(snapshot: LiveActivitySnapshot) {
+        updates += snapshot
+    }
+
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+        ends += snapshot to reason
+        running = false
+    }
 }
 
 private class FakeModelTimeProvider(

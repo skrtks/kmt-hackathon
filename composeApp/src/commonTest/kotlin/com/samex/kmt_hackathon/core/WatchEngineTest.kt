@@ -144,6 +144,95 @@ class WatchEngineTest {
         assertIs<ScheduleValidationResult.Overlap>(result)
     }
 
+    @Test
+    fun notificationTitlesUseSharedWatchCopy() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(departure("dep-1", 8 * 60 + 30)),
+            ),
+        )
+
+        val plans = engine.notificationPlansForSession(
+            groups = groups,
+            sessionStartMinutes = 8 * 60 + 20,
+            skippedGroupIds = emptySet(),
+            silenced = false,
+        )
+
+        val open = plans.first { it.kind == NotificationKind.WindowOpen }
+        val final = plans.first { it.kind == NotificationKind.FinalCall }
+        assertEquals(WatchCopy.LEAVE_NOW, open.title)
+        assertEquals(WatchCopy.FINAL_CALL, final.title)
+    }
+
+    @Test
+    fun watchCopyHeadlineCoversEveryStatus() {
+        assertEquals("Get ready", WatchCopy.headline(WatchStatus.GetReady))
+        assertEquals("Leave now", WatchCopy.headline(WatchStatus.LeaveNow))
+        assertEquals("Final call", WatchCopy.headline(WatchStatus.FinalCall))
+        assertEquals("Next chance", WatchCopy.headline(WatchStatus.Missed))
+        assertEquals("Watching", WatchCopy.headline(null))
+    }
+
+    @Test
+    fun watchCopyTitleMatchesNotificationKind() {
+        assertEquals("Leave now", WatchCopy.title(NotificationKind.WindowOpen))
+        assertEquals("Final call", WatchCopy.title(NotificationKind.FinalCall))
+        assertEquals("Watch stopped", WatchCopy.title(NotificationKind.WatchStopped))
+    }
+
+    @Test
+    fun liveActivitySnapshotMatchesNotificationBody() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(departure("dep-1", 8 * 60 + 30)),
+            ),
+        )
+        val group = groups.single()
+
+        val snapshot = engine.liveActivitySnapshot(
+            commuteId = commute.id,
+            group = group,
+            status = WatchStatus.LeaveNow,
+            walkingMinutes = 1,
+        )
+
+        assertEquals(WatchCopy.LEAVE_NOW, snapshot.title)
+        assertEquals(engine.notificationBody(group), snapshot.body)
+        assertEquals(group.id, snapshot.groupId)
+        assertEquals(group.windowOpenMinutes, snapshot.windowOpenMinutes)
+        assertEquals(group.finalCallMinutes, snapshot.finalCallMinutes)
+        assertEquals("Test Stop", snapshot.stopName)
+        assertEquals("tram 4", snapshot.lineLabel)
+        assertEquals("Central", snapshot.directionHeadsign)
+        assertEquals(1, snapshot.walkingMinutes)
+    }
+
+    @Test
+    fun liveActivitySnapshotHeadlineFollowsStatus() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(departure("dep-1", 8 * 60 + 30)),
+            ),
+        )
+        val group = groups.single()
+
+        val getReady = engine.liveActivitySnapshot(commute.id, group, WatchStatus.GetReady, walkingMinutes = 1)
+        val finalCall = engine.liveActivitySnapshot(commute.id, group, WatchStatus.FinalCall, walkingMinutes = 1)
+
+        assertEquals(WatchCopy.GET_READY, getReady.title)
+        assertEquals(WatchCopy.FINAL_CALL, finalCall.title)
+    }
+
     private fun departure(id: String, scheduledTimeMinutes: Int): Departure =
         Departure(
             id = id,

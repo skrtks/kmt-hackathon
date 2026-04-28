@@ -163,6 +163,29 @@ enum class NotificationKind {
     WatchStopped,
 }
 
+data class LiveActivitySnapshot(
+    val commuteId: String,
+    val groupId: String,
+    val status: WatchStatus,
+    val title: String,
+    val body: String,
+    val stopName: String,
+    val lineLabel: String,
+    val directionHeadsign: String,
+    val departureTimeMinutes: Int,
+    val windowOpenMinutes: Int,
+    val finalCallMinutes: Int,
+    val walkingMinutes: Int,
+)
+
+enum class LiveActivityEndReason {
+    SessionEnded,
+    Skipped,
+    Leaving,
+    WatchStopped,
+    ScheduleEnded,
+}
+
 const val MINUTES_PER_DAY = 24 * 60
 
 fun formatMinutesOfDay(minutesOfDay: Int): String {

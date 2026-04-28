@@ -58,6 +58,18 @@ Current first-version app architecture:
 - `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, and time.
 - Android/iOS/JVM actual implementations live under the matching platform source sets.
 - Android notifications use `AlarmManager` in `AndroidPlatformServices.kt`. When exact pending-intent alarms are allowed, the app uses them for process-independent delivery. On newer Android installs where `SCHEDULE_EXACT_ALARM` is denied by default, it also schedules a permission-free in-process exact alarm plus an inexact broadcast fallback so near-term smoke tests still fire while preserving a fallback if the process is gone.
+- `core/WatchEngine.WatchCopy` is the single source of truth for notification titles, watch-screen headlines, and Live Activity titles. Notification body copy is shared with the Live Activity body via `WatchEngine.notificationBody` and `liveActivitySnapshot`.
+
+### Live Activity (iOS / watchOS Smart Stack)
+
+- `core/PlatformServices.kt` exposes `LiveActivityController` (with `NoopLiveActivityController` for Android/JVM) and `LiveActivitySnapshot` / `LiveActivityEndReason` domain types.
+- `TransitAppModel` calls `start` / `update` / `end` on the controller as the active watch session changes (manual start, auto-start, status transitions, skip, "I'm leaving," schedule end, session restore on launch).
+- iOS implementation: `iosMain/.../IosLiveActivityController.kt` holds a Swift-registered `LiveActivityBridge`. The Swift side lives in `iosApp/`:
+  - `iosApp/iosApp/TransitLiveActivityBridge.swift` adopts `LiveActivityBridge`, drives `ActivityKit`, and is registered from `iOSApp.swift` at launch.
+  - `iosApp/TransitLiveActivity/` is a separate Widget Extension target containing `TransitWatchAttributes.swift`, `TransitLiveActivityWidget.swift`, and the extension `Info.plist`. **Manual Xcode step:** add this folder to `iosApp.xcodeproj` as a "Widget Extension" target and add it as an embedded content to the iOS app target. The Kotlin-side framework (`ComposeApp`) does not need to depend on the widget extension.
+  - The iOS app `Info.plist` enables `NSSupportsLiveActivities` and `NSSupportsLiveActivitiesFrequentUpdates`.
+- watchOS surface is iOS Live Activity mirroring via Smart Stack (watchOS 10+); there is no standalone watchOS app target.
+- `Text(timerInterval:)` drives the countdown; `WatchStopped` end reason uses a 2-minute lingering dismissal, others dismiss immediately.
 
 ### Mock Transit Data
 

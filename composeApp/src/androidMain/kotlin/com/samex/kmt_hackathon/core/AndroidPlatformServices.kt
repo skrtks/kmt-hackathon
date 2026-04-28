@@ -40,6 +40,8 @@ actual object PlatformServices {
 
     actual fun timeProvider(): TimeProvider = AndroidTimeProvider
 
+    actual fun liveActivityController(): LiveActivityController = NoopLiveActivityController
+
     private fun requireContext(): Context {
         check(::applicationContext.isInitialized) {
             "PlatformServices.initialize(activity) must be called before App()"

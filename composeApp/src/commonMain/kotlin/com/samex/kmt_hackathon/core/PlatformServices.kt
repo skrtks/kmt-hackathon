@@ -26,8 +26,25 @@ interface TimeProvider {
     fun currentWeekday(): Weekday
 }
 
+interface LiveActivityController {
+    fun isSupported(): Boolean
+    fun isActivityRunning(): Boolean
+    fun start(snapshot: LiveActivitySnapshot)
+    fun update(snapshot: LiveActivitySnapshot)
+    fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason)
+}
+
+object NoopLiveActivityController : LiveActivityController {
+    override fun isSupported(): Boolean = false
+    override fun isActivityRunning(): Boolean = false
+    override fun start(snapshot: LiveActivitySnapshot) = Unit
+    override fun update(snapshot: LiveActivitySnapshot) = Unit
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) = Unit
+}
+
 expect object PlatformServices {
     fun keyValueStore(): KeyValueStore
     fun notificationScheduler(): NotificationScheduler
     fun timeProvider(): TimeProvider
+    fun liveActivityController(): LiveActivityController
 }

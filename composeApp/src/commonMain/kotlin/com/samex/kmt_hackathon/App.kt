@@ -85,8 +85,9 @@ import com.samex.kmt_hackathon.core.PlatformServices
 import com.samex.kmt_hackathon.core.SavedCommute
 import com.samex.kmt_hackathon.core.TransitAppModel
 import com.samex.kmt_hackathon.core.UserDataRepository
-import com.samex.kmt_hackathon.core.WatchUiState
+import com.samex.kmt_hackathon.core.WatchCopy
 import com.samex.kmt_hackathon.core.WatchStatus
+import com.samex.kmt_hackathon.core.WatchUiState
 import com.samex.kmt_hackathon.core.Weekday
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
 import com.samex.kmt_hackathon.transit.LineDirection
@@ -104,6 +105,7 @@ fun App() {
             userDataRepository = UserDataRepository(PlatformServices.keyValueStore()),
             notificationScheduler = PlatformServices.notificationScheduler(),
             timeProvider = PlatformServices.timeProvider(),
+            liveActivityController = PlatformServices.liveActivityController(),
         )
     }
 

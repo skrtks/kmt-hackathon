@@ -100,7 +100,7 @@ class WatchEngine(
                         groupId = group.id,
                         kind = NotificationKind.WindowOpen,
                         fireAtMinutes = group.windowOpenMinutes,
-                        title = "Leave now",
+                        title = WatchCopy.title(NotificationKind.WindowOpen),
                         body = notificationBody(group),
                     ),
                     NotificationPlan(
@@ -108,7 +108,7 @@ class WatchEngine(
                         groupId = group.id,
                         kind = NotificationKind.FinalCall,
                         fireAtMinutes = group.finalCallMinutes,
-                        title = "Final call",
+                        title = WatchCopy.title(NotificationKind.FinalCall),
                         body = notificationBody(group),
                     ).takeIf { group.finalCallMinutes > sessionStartMinutes },
                 )
@@ -136,6 +136,30 @@ class WatchEngine(
             "${modeLabel(window.lineId)} ${window.lineShortName} at ${formatMinutesOfDay(window.departureTimeMinutes)}"
         }
         return "$options from ${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}"
+    }
+
+    fun liveActivitySnapshot(
+        commuteId: String,
+        group: LeaveWindowGroup,
+        status: WatchStatus,
+        walkingMinutes: Int,
+    ): LiveActivitySnapshot {
+        val primary = group.primaryWindow
+        val stopName = transitRepository.stopById(primary.stopId)?.name ?: ""
+        return LiveActivitySnapshot(
+            commuteId = commuteId,
+            groupId = group.id,
+            status = status,
+            title = WatchCopy.headline(status),
+            body = notificationBody(group),
+            stopName = stopName,
+            lineLabel = "${modeLabel(primary.lineId)} ${primary.lineShortName}",
+            directionHeadsign = primary.headsign,
+            departureTimeMinutes = primary.departureTimeMinutes,
+            windowOpenMinutes = group.windowOpenMinutes,
+            finalCallMinutes = group.finalCallMinutes,
+            walkingMinutes = walkingMinutes,
+        )
     }
 
     private fun modeLabel(lineId: String): String {
@@ -180,4 +204,28 @@ class WatchEngine(
 sealed interface ScheduleValidationResult {
     data object Valid : ScheduleValidationResult
     data class Overlap(val firstCommuteId: String, val secondCommuteId: String) : ScheduleValidationResult
+}
+
+object WatchCopy {
+    const val GET_READY = "Get ready"
+    const val LEAVE_NOW = "Leave now"
+    const val FINAL_CALL = "Final call"
+    const val MISSED = "Next chance"
+    const val WATCHING = "Watching"
+    const val WATCH_STOPPED_TITLE = "Watch stopped"
+    const val WATCH_STOPPED_BODY = "Watch ended unexpectedly. Open the app to resume."
+
+    fun headline(status: WatchStatus?): String = when (status) {
+        WatchStatus.GetReady -> GET_READY
+        WatchStatus.LeaveNow -> LEAVE_NOW
+        WatchStatus.FinalCall -> FINAL_CALL
+        WatchStatus.Missed -> MISSED
+        null -> WATCHING
+    }
+
+    fun title(kind: NotificationKind): String = when (kind) {
+        NotificationKind.WindowOpen -> LEAVE_NOW
+        NotificationKind.FinalCall -> FINAL_CALL
+        NotificationKind.WatchStopped -> WATCH_STOPPED_TITLE
+    }
 }

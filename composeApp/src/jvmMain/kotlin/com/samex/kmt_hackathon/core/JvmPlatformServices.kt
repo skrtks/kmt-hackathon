@@ -10,6 +10,8 @@ actual object PlatformServices {
     actual fun notificationScheduler(): NotificationScheduler = JvmNotificationScheduler
 
     actual fun timeProvider(): TimeProvider = JvmTimeProvider
+
+    actual fun liveActivityController(): LiveActivityController = NoopLiveActivityController
 }
 
 private object JvmKeyValueStore : KeyValueStore {

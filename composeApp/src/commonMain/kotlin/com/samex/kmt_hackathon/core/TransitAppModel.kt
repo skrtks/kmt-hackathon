@@ -60,8 +60,10 @@ class TransitAppModel(
     private val userDataRepository: UserDataRepository,
     private val notificationScheduler: NotificationScheduler,
     private val timeProvider: TimeProvider,
+    private val liveActivityController: LiveActivityController = NoopLiveActivityController,
 ) {
     private val engine = WatchEngine(transitRepository)
+    private var lastLiveSnapshot: LiveActivitySnapshot? = null
 
     var screen: AppScreen by mutableStateOf<AppScreen>(AppScreen.Home)
         private set
@@ -111,6 +113,7 @@ class TransitAppModel(
             restoredActiveSession -> AppScreen.Home
             else -> AppScreen.Home
         }
+        reconcileLiveActivityOnLoad(restored = restoredActiveSession)
     }
 
     fun tick() {
@@ -119,6 +122,7 @@ class TransitAppModel(
         expireLeavingSessionIfNeeded()
         stopAutoStartedSessionAfterScheduleEnd()
         maybeAutoStartForegroundSchedule()
+        syncLiveActivity()
     }
 
     fun requestNotificationPermission() {
@@ -394,8 +398,9 @@ class TransitAppModel(
         pendingReplacementCommuteId = null
     }
 
-    fun stopActiveSession() {
+    fun stopActiveSession(reason: LiveActivityEndReason = LiveActivityEndReason.SessionEnded) {
         notificationScheduler.cancelAll()
+        endLiveActivity(reason)
         activeGroups = emptyList()
         updateUserData(userData.copy(activeSession = null))
         screen = AppScreen.Home
@@ -411,6 +416,7 @@ class TransitAppModel(
                 activeSession = session.copy(skippedGroupIds = skipped),
             ),
         )
+        syncLiveActivity(skippedFallbackReason = LiveActivityEndReason.Skipped)
     }
 
     fun markLeaving() {
@@ -424,6 +430,7 @@ class TransitAppModel(
                 ),
             ),
         )
+        endLiveActivity(LiveActivityEndReason.Leaving)
     }
 
     fun stops(): List<TransitStop> = transitRepository.stops()
@@ -478,6 +485,7 @@ class TransitAppModel(
         updateUserData(userData.copy(activeSession = session))
         notificationScheduler.cancelAll()
         scheduleNotificationsForSession(session, groups)
+        startLiveActivityForSession(commute, origin)
         screen = AppScreen.Home
         errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
     }
@@ -560,7 +568,7 @@ class TransitAppModel(
         val skipped = session.skippedGroupIds.toSet()
         val current = engine.currentGroup(activeGroups, nowMinutes, skipped)
         if (current == null || nowMinutes > current.finalCallMinutes) {
-            stopActiveSession()
+            stopActiveSession(reason = LiveActivityEndReason.ScheduleEnded)
         }
     }
 
@@ -579,4 +587,87 @@ class TransitAppModel(
 
     private fun minutesBetween(start: Int, end: Int): Int =
         if (end >= start) end - start else (MINUTES_PER_DAY - start) + end
+
+    private fun currentLiveSnapshot(): LiveActivitySnapshot? {
+        val session = userData.activeSession ?: return null
+        if (session.silenced || session.leavingAtMinutes != null) return null
+        val commute = userData.commutes.firstOrNull { it.id == session.commuteId } ?: return null
+        val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return null
+        val skipped = session.skippedGroupIds.toSet()
+        val group = engine.currentGroup(activeGroups, nowMinutes, skipped) ?: return null
+        val status = engine.statusFor(group, nowMinutes)
+        if (status == WatchStatus.Missed) return null
+        val walking = engine.walkingTimeMinutes(origin.location, commute.stopId, userData.settings.walkingSpeed)
+        return engine.liveActivitySnapshot(
+            commuteId = commute.id,
+            group = group,
+            status = status,
+            walkingMinutes = walking,
+        )
+    }
+
+    private fun startLiveActivityForSession(commute: SavedCommute, origin: SavedPlace) {
+        if (!liveActivityController.isSupported()) return
+        val skipped = userData.activeSession?.skippedGroupIds?.toSet().orEmpty()
+        val group = engine.currentGroup(activeGroups, nowMinutes, skipped) ?: return
+        val status = engine.statusFor(group, nowMinutes)
+        if (status == WatchStatus.Missed) return
+        val walking = engine.walkingTimeMinutes(origin.location, commute.stopId, userData.settings.walkingSpeed)
+        val snapshot = engine.liveActivitySnapshot(
+            commuteId = commute.id,
+            group = group,
+            status = status,
+            walkingMinutes = walking,
+        )
+        liveActivityController.start(snapshot)
+        lastLiveSnapshot = snapshot
+    }
+
+    private fun syncLiveActivity(skippedFallbackReason: LiveActivityEndReason? = null) {
+        if (!liveActivityController.isSupported()) return
+        val snapshot = currentLiveSnapshot()
+        when {
+            snapshot == null && lastLiveSnapshot != null -> {
+                liveActivityController.end(
+                    snapshot = lastLiveSnapshot,
+                    reason = skippedFallbackReason ?: LiveActivityEndReason.SessionEnded,
+                )
+                lastLiveSnapshot = null
+            }
+            snapshot != null && lastLiveSnapshot == null -> {
+                liveActivityController.start(snapshot)
+                lastLiveSnapshot = snapshot
+            }
+            snapshot != null && snapshot != lastLiveSnapshot -> {
+                liveActivityController.update(snapshot)
+                lastLiveSnapshot = snapshot
+            }
+        }
+    }
+
+    private fun endLiveActivity(reason: LiveActivityEndReason) {
+        if (!liveActivityController.isSupported()) return
+        if (lastLiveSnapshot == null && !liveActivityController.isActivityRunning()) return
+        liveActivityController.end(snapshot = lastLiveSnapshot, reason = reason)
+        lastLiveSnapshot = null
+    }
+
+    private fun reconcileLiveActivityOnLoad(restored: Boolean) {
+        if (!liveActivityController.isSupported()) return
+        if (restored) {
+            val snapshot = currentLiveSnapshot()
+            if (snapshot != null) {
+                if (liveActivityController.isActivityRunning()) {
+                    liveActivityController.update(snapshot)
+                } else {
+                    liveActivityController.start(snapshot)
+                }
+                lastLiveSnapshot = snapshot
+            } else if (liveActivityController.isActivityRunning()) {
+                liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
+            }
+        } else if (liveActivityController.isActivityRunning()) {
+            liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
+        }
+    }
 }
