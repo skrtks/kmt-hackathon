@@ -38,6 +38,15 @@ data class WalkingSpeed(
 }
 
 @Serializable
+enum class AppColorTheme {
+    Sunrise,
+    Lagoon,
+    Grove,
+    Berry,
+    IntelliJ,
+}
+
+@Serializable
 enum class Weekday {
     Monday,
     Tuesday,
@@ -91,6 +100,7 @@ data class SavedCommute(
 data class UserSettings(
     val defaultArrivalBuffer: ArrivalBuffer = ArrivalBuffer(minEarlyMinutes = 1, maxEarlyMinutes = 3),
     val walkingSpeed: WalkingSpeed = WalkingSpeed(metersPerMinute = 80.0),
+    val colorTheme: AppColorTheme = AppColorTheme.Sunrise,
 )
 
 @Serializable

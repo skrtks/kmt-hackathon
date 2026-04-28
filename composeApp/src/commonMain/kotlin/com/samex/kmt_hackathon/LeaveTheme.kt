@@ -1,49 +1,155 @@
 package com.samex.kmt_hackathon
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.samex.kmt_hackathon.core.AppColorTheme
 
-val LeaveSignal = Color(0xFF7D7100)
-val LeaveOnSignal = Color(0xFFFFFFFF)
-val LeaveSignalContainer = Color(0xFFEFE19A)
-val LeaveOnSignalContainer = Color(0xFF252000)
+data class LeaveStatusColors(
+    val signal: Color,
+    val onSignal: Color,
+    val signalContainer: Color,
+    val onSignalContainer: Color,
+    val signalBackground: Color,
+    val route: Color,
+    val routeContainer: Color,
+    val onRouteContainer: Color,
+    val finalCall: Color,
+    val finalCallContainer: Color,
+    val onFinalCallContainer: Color,
+    val finalCallBackground: Color,
+    val missedContainer: Color,
+    val onMissedContainer: Color,
+    val missedBackground: Color,
+)
 
-val LeaveRoute = Color(0xFF5F6F30)
-val LeaveRouteContainer = Color(0xFFE3E9C0)
-val LeaveOnRouteContainer = Color(0xFF1C2208)
+data class LeaveThemeSpec(
+    val theme: AppColorTheme,
+    val label: String,
+    val description: String,
+    val colorScheme: ColorScheme,
+    val statusColors: LeaveStatusColors,
+)
 
-val LeaveFinalCall = Color(0xFF9F5F00)
-val LeaveFinalCallContainer = Color(0xFFFFDDAE)
-val LeaveOnFinalCallContainer = Color(0xFF321B00)
+private val SunriseStatusColors = LeaveStatusColors(
+    signal = Color(0xFF7D7100),
+    onSignal = Color(0xFFFFFFFF),
+    signalContainer = Color(0xFFEFE19A),
+    onSignalContainer = Color(0xFF252000),
+    signalBackground = Color(0xFFFFF7DF),
+    route = Color(0xFF5F6F30),
+    routeContainer = Color(0xFFE3E9C0),
+    onRouteContainer = Color(0xFF1C2208),
+    finalCall = Color(0xFF9F5F00),
+    finalCallContainer = Color(0xFFFFDDAE),
+    onFinalCallContainer = Color(0xFF321B00),
+    finalCallBackground = Color(0xFFFFF0D6),
+    missedContainer = Color(0xFFFFD9CD),
+    onMissedContainer = Color(0xFF3B0900),
+    missedBackground = Color(0xFFFFF1ED),
+)
 
-val LeaveMissedContainer = Color(0xFFFFD9CD)
-val LeaveOnMissedContainer = Color(0xFF3B0900)
+private val LagoonStatusColors = LeaveStatusColors(
+    signal = Color(0xFF006C84),
+    onSignal = Color(0xFFFFFFFF),
+    signalContainer = Color(0xFFB8EAFF),
+    onSignalContainer = Color(0xFF001F2A),
+    signalBackground = Color(0xFFEAF8FF),
+    route = Color(0xFF356B59),
+    routeContainer = Color(0xFFBEEBD7),
+    onRouteContainer = Color(0xFF002116),
+    finalCall = Color(0xFF9A5B00),
+    finalCallContainer = Color(0xFFFFDDB2),
+    onFinalCallContainer = Color(0xFF311B00),
+    finalCallBackground = Color(0xFFFFF2DF),
+    missedContainer = Color(0xFFFFD9D4),
+    onMissedContainer = Color(0xFF3A0906),
+    missedBackground = Color(0xFFFFF1EF),
+)
 
-private val LeaveColorScheme = lightColorScheme(
+private val GroveStatusColors = LeaveStatusColors(
+    signal = Color(0xFF3F6A24),
+    onSignal = Color(0xFFFFFFFF),
+    signalContainer = Color(0xFFC4EAA4),
+    onSignalContainer = Color(0xFF0C2100),
+    signalBackground = Color(0xFFF2FAE9),
+    route = Color(0xFF596A2D),
+    routeContainer = Color(0xFFDDE9B5),
+    onRouteContainer = Color(0xFF1A2005),
+    finalCall = Color(0xFF8F6100),
+    finalCallContainer = Color(0xFFFFDEA6),
+    onFinalCallContainer = Color(0xFF2D1B00),
+    finalCallBackground = Color(0xFFFFF3DC),
+    missedContainer = Color(0xFFFFD9CF),
+    onMissedContainer = Color(0xFF3A0900),
+    missedBackground = Color(0xFFFFF1EC),
+)
+
+private val BerryStatusColors = LeaveStatusColors(
+    signal = Color(0xFF8F4A4C),
+    onSignal = Color(0xFFFFFFFF),
+    signalContainer = Color(0xFFFFDAD9),
+    onSignalContainer = Color(0xFF3B080D),
+    signalBackground = Color(0xFFFFF3F2),
+    route = Color(0xFF775656),
+    routeContainer = Color(0xFFFFDAD9),
+    onRouteContainer = Color(0xFF2C1515),
+    finalCall = Color(0xFF755A2F),
+    finalCallContainer = Color(0xFFFFDDAF),
+    onFinalCallContainer = Color(0xFF281800),
+    finalCallBackground = Color(0xFFFFF1DE),
+    missedContainer = Color(0xFFFFDAD5),
+    onMissedContainer = Color(0xFF3B0805),
+    missedBackground = Color(0xFFFFF1EF),
+)
+
+private val IntelliJStatusColors = LeaveStatusColors(
+    signal = Color(0xFF0A84FF),
+    onSignal = Color(0xFFFFFFFF),
+    signalContainer = Color(0xFF0A84FF),
+    onSignalContainer = Color(0xFFFFFFFF),
+    signalBackground = Color(0xFF13002E),
+    route = Color(0xFFFF7A1A),
+    routeContainer = Color(0xFFFF7A1A),
+    onRouteContainer = Color(0xFF000000),
+    finalCall = Color(0xFFFF8A1F),
+    finalCallContainer = Color(0xFFFF8A1F),
+    onFinalCallContainer = Color(0xFF000000),
+    finalCallBackground = Color(0xFF1B0630),
+    missedContainer = Color(0xFFFF2D7A),
+    onMissedContainer = Color(0xFFFFFFFF),
+    missedBackground = Color(0xFF260018),
+)
+
+private val SunriseColorScheme = lightColorScheme(
     primary = Color(0xFFD8C357),
     onPrimary = Color(0xFF272100),
-    primaryContainer = LeaveSignalContainer,
-    onPrimaryContainer = LeaveOnSignalContainer,
-    secondary = LeaveRoute,
+    primaryContainer = SunriseStatusColors.signalContainer,
+    onPrimaryContainer = SunriseStatusColors.onSignalContainer,
+    secondary = SunriseStatusColors.route,
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = LeaveRouteContainer,
-    onSecondaryContainer = LeaveOnRouteContainer,
+    secondaryContainer = SunriseStatusColors.routeContainer,
+    onSecondaryContainer = SunriseStatusColors.onRouteContainer,
     tertiary = Color(0xFF5F8E68),
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFC4ECCF),
     onTertiaryContainer = Color(0xFF143723),
     error = Color(0xFFBA1A1A),
-    errorContainer = LeaveMissedContainer,
-    onErrorContainer = LeaveOnMissedContainer,
+    onError = Color(0xFFFFFFFF),
+    errorContainer = SunriseStatusColors.missedContainer,
+    onErrorContainer = SunriseStatusColors.onMissedContainer,
     background = Color(0xFFFFFAEF),
     onBackground = Color(0xFF201D12),
     surface = Color(0xFFFFFCF5),
@@ -55,6 +161,169 @@ private val LeaveColorScheme = lightColorScheme(
     inverseSurface = Color(0xFF353024),
     inverseOnSurface = Color(0xFFF8EFD9),
 )
+
+private val LagoonColorScheme = lightColorScheme(
+    primary = Color(0xFF006C84),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = LagoonStatusColors.signalContainer,
+    onPrimaryContainer = LagoonStatusColors.onSignalContainer,
+    secondary = Color(0xFF4C626F),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCFE6F4),
+    onSecondaryContainer = Color(0xFF071F2A),
+    tertiary = LagoonStatusColors.route,
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = LagoonStatusColors.routeContainer,
+    onTertiaryContainer = LagoonStatusColors.onRouteContainer,
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = LagoonStatusColors.missedContainer,
+    onErrorContainer = LagoonStatusColors.onMissedContainer,
+    background = Color(0xFFF6FAFD),
+    onBackground = Color(0xFF181C1F),
+    surface = Color(0xFFFBFCFF),
+    onSurface = Color(0xFF181C1F),
+    surfaceVariant = Color(0xFFDCE4E9),
+    onSurfaceVariant = Color(0xFF40484D),
+    outline = Color(0xFF70787D),
+    outlineVariant = Color(0xFFC0C8CD),
+    inverseSurface = Color(0xFF2D3134),
+    inverseOnSurface = Color(0xFFEFF1F4),
+)
+
+private val GroveColorScheme = lightColorScheme(
+    primary = Color(0xFF4B662C),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = GroveStatusColors.signalContainer,
+    onPrimaryContainer = GroveStatusColors.onSignalContainer,
+    secondary = Color(0xFF586249),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFDCE7C8),
+    onSecondaryContainer = Color(0xFF161E0C),
+    tertiary = Color(0xFF386666),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFBCEBEB),
+    onTertiaryContainer = Color(0xFF002020),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = GroveStatusColors.missedContainer,
+    onErrorContainer = GroveStatusColors.onMissedContainer,
+    background = Color(0xFFF8FAEF),
+    onBackground = Color(0xFF1A1C16),
+    surface = Color(0xFFFDFCF3),
+    onSurface = Color(0xFF1A1C16),
+    surfaceVariant = Color(0xFFE2E4D6),
+    onSurfaceVariant = Color(0xFF45483E),
+    outline = Color(0xFF75786C),
+    outlineVariant = Color(0xFFC6C8BA),
+    inverseSurface = Color(0xFF2F312B),
+    inverseOnSurface = Color(0xFFF1F1E8),
+)
+
+private val BerryColorScheme = lightColorScheme(
+    primary = Color(0xFF8F4A4C),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = BerryStatusColors.signalContainer,
+    onPrimaryContainer = BerryStatusColors.onSignalContainer,
+    secondary = BerryStatusColors.route,
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = BerryStatusColors.routeContainer,
+    onSecondaryContainer = BerryStatusColors.onRouteContainer,
+    tertiary = BerryStatusColors.finalCall,
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = BerryStatusColors.finalCallContainer,
+    onTertiaryContainer = BerryStatusColors.onFinalCallContainer,
+    error = Color(0xFF904A40),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = BerryStatusColors.missedContainer,
+    onErrorContainer = BerryStatusColors.onMissedContainer,
+    background = Color(0xFFFFF8F7),
+    onBackground = Color(0xFF221919),
+    surface = Color(0xFFFFF8F7),
+    onSurface = Color(0xFF221919),
+    surfaceVariant = Color(0xFFF4DDDC),
+    onSurfaceVariant = Color(0xFF524343),
+    outline = Color(0xFF857372),
+    outlineVariant = Color(0xFFD7C1C1),
+    inverseSurface = Color(0xFF382E2E),
+    inverseOnSurface = Color(0xFFFFEDEC),
+)
+
+private val IntelliJColorScheme = darkColorScheme(
+    primary = Color(0xFF0A84FF),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF5B21D6),
+    onPrimaryContainer = Color(0xFFFFFFFF),
+    secondary = Color(0xFFFF7A1A),
+    onSecondary = Color(0xFF000000),
+    secondaryContainer = Color(0xFFFF7A1A),
+    onSecondaryContainer = Color(0xFF000000),
+    tertiary = Color(0xFFFF2D7A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFF2D7A),
+    onTertiaryContainer = Color(0xFFFFFFFF),
+    error = Color(0xFFFF2D7A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = IntelliJStatusColors.missedContainer,
+    onErrorContainer = IntelliJStatusColors.onMissedContainer,
+    background = Color(0xFF2B0A73),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF07000F),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF35106F),
+    onSurfaceVariant = Color(0xFFF4E9FF),
+    outline = Color(0xFFC6A8FF),
+    outlineVariant = Color(0xFF7A44FF),
+    inverseSurface = Color(0xFFFFFFFF),
+    inverseOnSurface = Color(0xFF07000F),
+    inversePrimary = Color(0xFF004EAE),
+)
+
+private val LocalLeaveStatusColors = staticCompositionLocalOf { SunriseStatusColors }
+
+fun leaveThemeSpec(theme: AppColorTheme): LeaveThemeSpec =
+    when (theme) {
+        AppColorTheme.Sunrise -> LeaveThemeSpec(
+            theme = theme,
+            label = "Sunrise",
+            description = "Warm and bright",
+            colorScheme = SunriseColorScheme,
+            statusColors = SunriseStatusColors,
+        )
+        AppColorTheme.Lagoon -> LeaveThemeSpec(
+            theme = theme,
+            label = "Lagoon",
+            description = "Cool and clear",
+            colorScheme = LagoonColorScheme,
+            statusColors = LagoonStatusColors,
+        )
+        AppColorTheme.Grove -> LeaveThemeSpec(
+            theme = theme,
+            label = "Grove",
+            description = "Green and grounded",
+            colorScheme = GroveColorScheme,
+            statusColors = GroveStatusColors,
+        )
+        AppColorTheme.Berry -> LeaveThemeSpec(
+            theme = theme,
+            label = "Berry",
+            description = "Soft and lively",
+            colorScheme = BerryColorScheme,
+            statusColors = BerryStatusColors,
+        )
+        AppColorTheme.IntelliJ -> LeaveThemeSpec(
+            theme = theme,
+            label = "IntelliJ",
+            description = "Flashy contrast",
+            colorScheme = IntelliJColorScheme,
+            statusColors = IntelliJStatusColors,
+        )
+    }
+
+fun leaveThemeSpecs(): List<LeaveThemeSpec> = AppColorTheme.entries.map(::leaveThemeSpec)
+
+@Composable
+fun leaveStatusColors(): LeaveStatusColors = LocalLeaveStatusColors.current
 
 private val LeaveShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
@@ -122,11 +391,17 @@ private val LeaveTypography = Typography(
 )
 
 @Composable
-fun LeaveTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = LeaveColorScheme,
-        typography = LeaveTypography,
-        shapes = LeaveShapes,
-        content = content,
-    )
+fun LeaveTheme(
+    theme: AppColorTheme = AppColorTheme.Sunrise,
+    content: @Composable () -> Unit,
+) {
+    val spec = leaveThemeSpec(theme)
+    CompositionLocalProvider(LocalLeaveStatusColors provides spec.statusColors) {
+        MaterialTheme(
+            colorScheme = spec.colorScheme,
+            typography = LeaveTypography,
+            shapes = LeaveShapes,
+            content = content,
+        )
+    }
 }

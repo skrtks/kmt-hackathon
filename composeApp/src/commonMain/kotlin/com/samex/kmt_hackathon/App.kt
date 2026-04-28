@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,6 +66,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.samex.kmt_hackathon.core.AppScreen
+import com.samex.kmt_hackathon.core.AppColorTheme
 import com.samex.kmt_hackathon.core.CommuteDraft
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
@@ -102,7 +104,7 @@ fun App() {
         }
     }
 
-    LeaveTheme {
+    LeaveTheme(theme = model.userData.settings.colorTheme) {
         AppContent(model)
     }
 }
@@ -297,9 +299,10 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
 
 @Composable
 private fun ActiveStatusPill() {
+    val statusColors = leaveStatusColors()
     Surface(
-        color = LeaveSignalContainer,
-        contentColor = LeaveOnSignalContainer,
+        color = statusColors.signalContainer,
+        contentColor = statusColors.onSignalContainer,
         shape = CircleShape,
         tonalElevation = 1.dp,
     ) {
@@ -571,10 +574,11 @@ private fun LeaveWindowProgress(
     nowSecondsOfDay: Int,
     status: WatchStatus?,
 ) {
+    val statusColors = leaveStatusColors()
     val targetFillColor = when (status) {
-        WatchStatus.FinalCall -> LeaveFinalCall
+        WatchStatus.FinalCall -> statusColors.finalCall
         WatchStatus.Missed -> MaterialTheme.colorScheme.error
-        else -> LeaveSignal
+        else -> statusColors.signal
     }
     val fillColor by animateColorAsState(
         targetValue = targetFillColor,
@@ -719,41 +723,49 @@ private fun SchedulePill(commute: SavedCommute) {
 
 @Composable
 private fun appBackgroundColor(status: WatchStatus?): Color =
-    when (status) {
-        WatchStatus.LeaveNow -> Color(0xFFFFF7DF)
-        WatchStatus.FinalCall -> Color(0xFFFFF0D6)
-        WatchStatus.Missed -> Color(0xFFFFF1ED)
-        else -> MaterialTheme.colorScheme.background
+    with(leaveStatusColors()) {
+        when (status) {
+            WatchStatus.LeaveNow -> signalBackground
+            WatchStatus.FinalCall -> finalCallBackground
+            WatchStatus.Missed -> missedBackground
+            else -> MaterialTheme.colorScheme.background
+        }
     }
 
 @Composable
 private fun statusContainerColor(status: WatchStatus?): Color =
-    when (status) {
-        WatchStatus.GetReady -> LeaveRouteContainer
-        WatchStatus.LeaveNow -> LeaveSignalContainer
-        WatchStatus.FinalCall -> LeaveFinalCallContainer
-        WatchStatus.Missed -> LeaveMissedContainer
-        null -> MaterialTheme.colorScheme.surfaceVariant
+    with(leaveStatusColors()) {
+        when (status) {
+            WatchStatus.GetReady -> routeContainer
+            WatchStatus.LeaveNow -> signalContainer
+            WatchStatus.FinalCall -> finalCallContainer
+            WatchStatus.Missed -> missedContainer
+            null -> MaterialTheme.colorScheme.surfaceVariant
+        }
     }
 
 @Composable
 private fun statusContentColor(status: WatchStatus?): Color =
-    when (status) {
-        WatchStatus.GetReady -> LeaveOnRouteContainer
-        WatchStatus.LeaveNow -> LeaveOnSignalContainer
-        WatchStatus.FinalCall -> LeaveOnFinalCallContainer
-        WatchStatus.Missed -> LeaveOnMissedContainer
-        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    with(leaveStatusColors()) {
+        when (status) {
+            WatchStatus.GetReady -> onRouteContainer
+            WatchStatus.LeaveNow -> onSignalContainer
+            WatchStatus.FinalCall -> onFinalCallContainer
+            WatchStatus.Missed -> onMissedContainer
+            null -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
     }
 
 @Composable
 private fun statusBorderColor(status: WatchStatus?): Color =
-    when (status) {
-        WatchStatus.GetReady -> LeaveRoute
-        WatchStatus.LeaveNow -> LeaveSignal
-        WatchStatus.FinalCall -> LeaveFinalCall
-        WatchStatus.Missed -> MaterialTheme.colorScheme.error
-        null -> MaterialTheme.colorScheme.outline
+    with(leaveStatusColors()) {
+        when (status) {
+            WatchStatus.GetReady -> route
+            WatchStatus.LeaveNow -> signal
+            WatchStatus.FinalCall -> finalCall
+            WatchStatus.Missed -> MaterialTheme.colorScheme.error
+            null -> MaterialTheme.colorScheme.outline
+        }
     }
 
 @Composable
@@ -1417,8 +1429,19 @@ private fun SettingsScreen(model: TransitAppModel) {
         SettingsOverviewCard(
             earlyWindow = "${settings.defaultArrivalBuffer.minEarlyMinutes}-${settings.defaultArrivalBuffer.maxEarlyMinutes} min",
             walkingSpeed = "${settings.walkingSpeed.metersPerMinute.toInt()} m/min",
+            colorTheme = settings.colorTheme,
             notificationStatus = model.notificationStatus,
         )
+
+        SettingsPanel(
+            title = "Theme",
+            subtitle = "Choose a color mood for the app.",
+        ) {
+            ThemePicker(
+                selectedTheme = settings.colorTheme,
+                onThemeSelected = model::updateColorTheme,
+            )
+        }
 
         SettingsPanel(
             title = "Arrival window",
@@ -1482,6 +1505,7 @@ private fun SettingsScreen(model: TransitAppModel) {
 private fun SettingsOverviewCard(
     earlyWindow: String,
     walkingSpeed: String,
+    colorTheme: AppColorTheme,
     notificationStatus: NotificationPermissionStatus,
 ) {
     Card(
@@ -1539,12 +1563,14 @@ private fun SettingsOverviewCard(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SettingsMetricPill("Window", earlyWindow)
                         SettingsMetricPill("Walk", walkingSpeed)
+                        SettingsMetricPill("Theme", leaveThemeSpec(colorTheme).label)
                         SettingsMetricPill("Alerts", notificationStatus.name)
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SettingsMetricPill("Window", earlyWindow, modifier = Modifier.weight(1f))
                         SettingsMetricPill("Walk", walkingSpeed, modifier = Modifier.weight(1f))
+                        SettingsMetricPill("Theme", leaveThemeSpec(colorTheme).label, modifier = Modifier.weight(1f))
                         SettingsMetricPill("Alerts", notificationStatus.name, modifier = Modifier.weight(1f))
                     }
                 }
@@ -1578,6 +1604,162 @@ private fun SettingsMetricPill(label: String, value: String, modifier: Modifier 
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+@Composable
+private fun ThemePicker(
+    selectedTheme: AppColorTheme,
+    onThemeSelected: (AppColorTheme) -> Unit,
+) {
+    val specs = leaveThemeSpecs()
+    CompactAware { compact ->
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                specs.chunked(2).forEach { rowSpecs ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowSpecs.forEach { spec ->
+                            ThemeChoiceCard(
+                                spec = spec,
+                                selected = spec.theme == selectedTheme,
+                                onClick = { onThemeSelected(spec.theme) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowSpecs.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                specs.forEach { spec ->
+                    ThemeChoiceCard(
+                        spec = spec,
+                        selected = spec.theme == selectedTheme,
+                        onClick = { onThemeSelected(spec.theme) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeChoiceCard(
+    spec: LeaveThemeSpec,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) spec.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        animationSpec = TweenSpec(durationMillis = 220),
+        label = "themeChoiceBorder",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) spec.colorScheme.primaryContainer.copy(alpha = 0.58f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        animationSpec = TweenSpec(durationMillis = 220),
+        label = "themeChoiceContainer",
+    )
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(if (selected) 2.dp else 1.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ThemeSwatch(spec = spec, selected = selected)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    spec.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    spec.description,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatch(spec: LeaveThemeSpec, selected: Boolean) {
+    Box(modifier = Modifier.size(56.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = spec.colorScheme.primaryContainer,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, spec.colorScheme.primary.copy(alpha = 0.75f)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    ThemeSwatchDot(color = spec.colorScheme.primary)
+                    ThemeSwatchDot(color = spec.colorScheme.secondary)
+                    ThemeSwatchDot(color = spec.colorScheme.tertiary)
+                }
+            }
+        }
+        if (selected) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(22.dp),
+                color = spec.colorScheme.primary,
+                contentColor = spec.colorScheme.onPrimary,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.surface),
+            ) {
+                ThemeCheckMark()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatchDot(color: Color) {
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(color),
+    )
+}
+
+@Composable
+private fun ThemeCheckMark() {
+    val color = LocalContentColor.current
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.28f, size.height * 0.52f),
+            end = Offset(size.width * 0.43f, size.height * 0.67f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.43f, size.height * 0.67f),
+            end = Offset(size.width * 0.74f, size.height * 0.34f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
     }
 }
 

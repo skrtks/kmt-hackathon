@@ -10,6 +10,7 @@ class UserDataRepositoryTest {
         val repository = UserDataRepository(store)
         val data = UserData(
             places = listOf(SavedPlace("place", "Home", GeoPoint(52.0, 4.0))),
+            settings = UserSettings(colorTheme = AppColorTheme.Lagoon),
             commutes = listOf(
                 SavedCommute(
                     id = "commute",

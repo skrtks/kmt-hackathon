@@ -201,8 +201,9 @@ Central theme entry point.
 
 Responsibilities:
 
-- Light/dark color schemes.
-- Optional Android dynamic color.
+- Selectable app color themes inspired by Tack's red/yellow/green/blue palette picker, plus a high-contrast IntelliJ-inspired theme.
+- Theme-aware active-watch status colors.
+- Optional Android dynamic color later.
 - App typography.
 - Shape scale.
 - Surface defaults.
@@ -339,6 +340,7 @@ Settings should be quieter than Home/Watch.
 Use:
 
 - Grouped surfaces.
+- Theme picker cards with compact color swatches and a clear selected state.
 - Small descriptions.
 - Tighter controls.
 - Clear current defaults.

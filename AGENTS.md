@@ -46,7 +46,7 @@ UI uses **Material3** via Compose Multiplatform. Lifecycle/ViewModel from `andro
 Design-system notes:
 - `design.md` captures the current Material 3 / M3 Expressive research direction.
 - `reference/tack-android` is the current local visual reference when present. Do not copy GPL source directly; use it for design and interaction inspiration.
-- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/LeaveTheme.kt` is the shared theme entry point. It defines the fixed MVP color scheme, shape scale, and typography overrides.
+- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/LeaveTheme.kt` is the shared theme entry point. It defines the selectable MVP color themes, theme-aware watch status colors, shape scale, and typography overrides.
 - `App.kt` currently owns the first reusable expressive UI primitives (`ActiveWatchHero`, `LeaveWindowProgress`, `RouteChip`, `CommuteSummaryCard`). Prefer extracting them into dedicated UI files as the component set grows.
 
 Current first-version app architecture:

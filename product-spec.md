@@ -303,6 +303,7 @@ Saved places screen or flow should support:
 
 Settings should include:
 
+- App color theme preference.
 - Global arrival buffer default.
 - Global walking-speed preference.
 - Notification permission/status entry point.

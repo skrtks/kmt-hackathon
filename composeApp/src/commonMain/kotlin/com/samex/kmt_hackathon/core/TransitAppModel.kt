@@ -304,6 +304,14 @@ class TransitAppModel(
         )
     }
 
+    fun updateColorTheme(theme: AppColorTheme) {
+        updateUserData(
+            userData.copy(
+                settings = userData.settings.copy(colorTheme = theme),
+            ),
+        )
+    }
+
     fun startWatch(commuteId: String, manual: Boolean = true) {
         val active = userData.activeSession
         if (active != null && active.commuteId == commuteId && manual) {

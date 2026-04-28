@@ -71,6 +71,20 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun updateColorThemePersistsThemeChoice() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60)
+
+        model.load()
+        model.updateColorTheme(AppColorTheme.IntelliJ)
+
+        assertEquals(AppColorTheme.IntelliJ, model.userData.settings.colorTheme)
+        assertEquals(AppColorTheme.IntelliJ, repository.load().settings.colorTheme)
+    }
+
+    @Test
     fun scheduleEndStopsAutoStartedSessionAfterActiveWindowFinishes() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
