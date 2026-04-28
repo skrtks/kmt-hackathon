@@ -1,8 +1,8 @@
 # First App Version Plan
 
-Plan version: 0.1.0  
+Plan version: 0.1.3  
 Target app version: MVP / first usable version  
-Status: Draft ready for implementation  
+Status: Implemented and second-pass reviewed  
 Last updated: 2026-04-28
 
 ## Versioning
@@ -15,6 +15,9 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `0.1.3` - Documented the remaining hardening gap for true OS-level auto-start scheduling.
+- `0.1.2` - Second-pass review fixes for active-session restore, schedule-end handling, exact window-open notification suppression, and regression coverage.
+- `0.1.1` - Marked the first-pass implementation complete.
 - `0.1.0` - Initial implementation plan for the first full MVP using mock transit data.
 
 ## Summary
@@ -131,3 +134,7 @@ The first version will be a real Compose Multiplatform app across Android, iOS, 
 - Desktop does not need OS-level notifications in v1.
 - Exact Android notification timing should use the best available platform mechanism; if exact alarms are unavailable, the app should still surface permission/status limitations clearly.
 - `product-spec.md` remains the product source of truth; this plan is the implementation plan for that spec.
+
+## Known Remaining Hardening
+
+- Active watch sessions schedule real platform notifications, but scheduled auto-start currently depends on the app being active or opened during the schedule window. True OS-level background auto-start should be implemented as a follow-up with platform-specific scheduling rules.

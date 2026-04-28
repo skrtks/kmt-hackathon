@@ -43,6 +43,14 @@ Platform entry points all call the shared `App()` composable:
 
 UI uses **Material3** via Compose Multiplatform. Lifecycle/ViewModel from `androidx.lifecycle` works cross-platform via KMP-compatible artifacts.
 
+Current first-version app architecture:
+
+- `core/DomainModels.kt` contains persisted user data, saved places/commutes, schedule, session, leave-window, and notification-plan models.
+- `core/WatchEngine.kt` owns walking-time calculation, leave-window calculation, merge behavior, schedule validation, and notification-plan generation.
+- `core/TransitAppModel.kt` is the shared state holder for onboarding, saved commutes, settings, active watch sessions, and UI actions.
+- `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, and time.
+- Android/iOS/JVM actual implementations live under the matching platform source sets.
+
 ### Mock Transit Data
 
 Early development uses a static in-memory fixture:
