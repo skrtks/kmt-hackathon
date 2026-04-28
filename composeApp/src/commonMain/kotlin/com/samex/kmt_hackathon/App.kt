@@ -261,6 +261,10 @@ private fun HomeScreen(model: TransitAppModel) {
 
 @Composable
 private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, compact: Boolean) {
+    var showMoreWindows by remember { mutableStateOf(false) }
+    val visibleWindowCount = if (showMoreWindows) 5 else 2
+    val canExpandWindows = state.groups.size > 2
+
     ActiveWatchHero(
         state = state,
         nowSecondsOfDay = model.nowSecondsOfDay,
@@ -292,8 +296,19 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
     }
 
     if (state.groups.isNotEmpty()) {
-        Text("Next windows", style = MaterialTheme.typography.titleMedium)
-        state.groups.take(5).forEach { group ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Next windows", style = MaterialTheme.typography.titleMedium)
+            if (canExpandWindows) {
+                TextButton(onClick = { showMoreWindows = !showMoreWindows }) {
+                    ButtonLabel(if (showMoreWindows) "Show fewer" else "Show more")
+                }
+            }
+        }
+        state.groups.take(visibleWindowCount).forEach { group ->
             UpcomingWindowRow(group = group, compact = compact)
         }
     }
