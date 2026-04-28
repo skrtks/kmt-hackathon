@@ -86,6 +86,9 @@ class TransitAppModel(
     var nowMinutes: Int by mutableStateOf(0)
         private set
 
+    var nowSecondsOfDay: Int by mutableStateOf(0)
+        private set
+
     var notificationStatus: NotificationPermissionStatus by mutableStateOf(NotificationPermissionStatus.NotDetermined)
         private set
 
@@ -98,7 +101,7 @@ class TransitAppModel(
     fun load() {
         userData = userDataRepository.load()
         notificationStatus = notificationScheduler.permissionStatus()
-        nowMinutes = timeProvider.nowMinutesOfDay()
+        updateClock()
         val restoredActiveSession = restoreActiveSession()
         screen = when {
             userData.places.isEmpty() -> AppScreen.PlaceEditor(onboarding = true)
@@ -108,7 +111,7 @@ class TransitAppModel(
     }
 
     fun tick() {
-        nowMinutes = timeProvider.nowMinutesOfDay()
+        updateClock()
         notificationStatus = notificationScheduler.permissionStatus()
         expireLeavingSessionIfNeeded()
         stopAutoStartedSessionAfterScheduleEnd()
@@ -396,7 +399,7 @@ class TransitAppModel(
     private fun startWatchInternal(commuteId: String, startedAutomatically: Boolean) {
         val commute = userData.commutes.firstOrNull { it.id == commuteId } ?: return
         val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return
-        nowMinutes = timeProvider.nowMinutesOfDay()
+        updateClock()
 
         val departures = transitRepository.departuresFor(
             stopId = commute.stopId,
@@ -480,6 +483,11 @@ class TransitAppModel(
     private fun updateUserData(next: UserData) {
         userData = next
         userDataRepository.save(next)
+    }
+
+    private fun updateClock() {
+        nowSecondsOfDay = timeProvider.nowSecondsOfDay()
+        nowMinutes = nowSecondsOfDay / 60
     }
 
     private fun newId(prefix: String): String =

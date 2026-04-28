@@ -97,7 +97,7 @@ fun App() {
     LaunchedEffect(model) {
         model.load()
         while (true) {
-            delay(30_000)
+            delay(1_000)
             model.tick()
         }
     }
@@ -256,7 +256,7 @@ private fun ActiveWatchCard(model: TransitAppModel, compact: Boolean) {
     val state = model.watchUiState() ?: return
     ActiveWatchHero(
         state = state,
-        nowMinutes = model.nowMinutes,
+        nowSecondsOfDay = model.nowSecondsOfDay,
         compact = compact,
         routeLabels = commuteRouteLabels(model, state.commute),
         summary = true,
@@ -360,7 +360,7 @@ private fun CommuteSummaryCard(
 @Composable
 private fun ActiveWatchHero(
     state: WatchUiState,
-    nowMinutes: Int,
+    nowSecondsOfDay: Int,
     compact: Boolean,
     routeLabels: List<String>,
     summary: Boolean = false,
@@ -470,7 +470,7 @@ private fun ActiveWatchHero(
                 LeaveWindowProgress(
                     windowOpenMinutes = group.windowOpenMinutes,
                     finalCallMinutes = group.finalCallMinutes,
-                    nowMinutes = nowMinutes,
+                    nowSecondsOfDay = nowSecondsOfDay,
                     status = status,
                 )
             } ?: Text(
@@ -598,7 +598,7 @@ private fun WatchMetric(label: String, value: String, modifier: Modifier = Modif
 private fun LeaveWindowProgress(
     windowOpenMinutes: Int,
     finalCallMinutes: Int,
-    nowMinutes: Int,
+    nowSecondsOfDay: Int,
     status: WatchStatus?,
 ) {
     val targetFillColor = when (status) {
@@ -612,9 +612,9 @@ private fun LeaveWindowProgress(
         label = "windowProgressColor",
     )
     val progress by animateFloatAsState(
-        targetValue = leaveWindowRemainingFraction(windowOpenMinutes, finalCallMinutes, nowMinutes),
+        targetValue = leaveWindowProgressFraction(windowOpenMinutes, finalCallMinutes, nowSecondsOfDay),
         animationSpec = TweenSpec(durationMillis = 450),
-        label = "windowRemaining",
+        label = "windowProgress",
     )
     val waveAnimated = status == WatchStatus.LeaveNow || status == WatchStatus.FinalCall
     val waveTransition = rememberInfiniteTransition(label = "windowWave")
@@ -662,11 +662,6 @@ private fun LeaveWindowProgress(
                     path = path,
                     color = fillColor,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                )
-                drawCircle(
-                    color = fillColor,
-                    radius = strokeWidth * 0.72f,
-                    center = Offset(progressWidth, centerY),
                 )
             }
         }
@@ -810,9 +805,11 @@ private fun routeAccentColor(index: Int): Color =
         else -> MaterialTheme.colorScheme.error
     }
 
-private fun leaveWindowRemainingFraction(windowOpenMinutes: Int, finalCallMinutes: Int, nowMinutes: Int): Float {
-    if (finalCallMinutes <= windowOpenMinutes) return 0f
-    return ((finalCallMinutes - nowMinutes).toFloat() / (finalCallMinutes - windowOpenMinutes).toFloat())
+private fun leaveWindowProgressFraction(windowOpenMinutes: Int, finalCallMinutes: Int, nowSecondsOfDay: Int): Float {
+    val openSeconds = windowOpenMinutes * 60
+    val finalCallSeconds = finalCallMinutes * 60
+    if (finalCallSeconds <= openSeconds) return 1f
+    return ((nowSecondsOfDay - openSeconds).toFloat() / (finalCallSeconds - openSeconds).toFloat())
         .coerceIn(0f, 1f)
 }
 
@@ -1381,7 +1378,7 @@ private fun WatchScreen(model: TransitAppModel) {
         CompactAware { compact ->
             ActiveWatchHero(
                 state = state,
-                nowMinutes = model.nowMinutes,
+                nowSecondsOfDay = model.nowSecondsOfDay,
                 compact = compact,
                 routeLabels = commuteRouteLabels(model, state.commute),
             ) {
@@ -1535,11 +1532,24 @@ private fun PlacesScreen(model: TransitAppModel) {
 @Composable
 private fun SettingsScreen(model: TransitAppModel) {
     val settings = model.userData.settings
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Settings", style = MaterialTheme.typography.titleLarge)
-        Section("Global arrival buffer") {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        SettingsOverviewCard(
+            earlyWindow = "${settings.defaultArrivalBuffer.minEarlyMinutes}-${settings.defaultArrivalBuffer.maxEarlyMinutes} min",
+            walkingSpeed = "${settings.walkingSpeed.metersPerMinute.toInt()} m/min",
+            notificationStatus = model.notificationStatus,
+        )
+
+        SettingsPanel(
+            title = "Arrival window",
+            subtitle = "The leave window is calculated from how early you want to reach the stop.",
+        ) {
             SettingStepperRow(
-                label = "At least ${settings.defaultArrivalBuffer.minEarlyMinutes} min early",
+                label = "Minimum early",
+                value = "${settings.defaultArrivalBuffer.minEarlyMinutes} min",
+                description = "Closest acceptable arrival before departure.",
                 onMinus = {
                     model.updateDefaultArrivalBuffer(
                         (settings.defaultArrivalBuffer.minEarlyMinutes - 1).coerceAtLeast(0),
@@ -1554,7 +1564,9 @@ private fun SettingsScreen(model: TransitAppModel) {
                 },
             )
             SettingStepperRow(
-                label = "At most ${settings.defaultArrivalBuffer.maxEarlyMinutes} min early",
+                label = "Maximum early",
+                value = "${settings.defaultArrivalBuffer.maxEarlyMinutes} min",
+                description = "Earliest acceptable arrival before departure.",
                 onMinus = {
                     model.updateDefaultArrivalBuffer(
                         settings.defaultArrivalBuffer.minEarlyMinutes,
@@ -1569,18 +1581,232 @@ private fun SettingsScreen(model: TransitAppModel) {
                 },
             )
         }
-        Section("Walking speed") {
+        SettingsPanel(
+            title = "Walking pace",
+            subtitle = "Used to estimate how long it takes to reach a stop from a saved place.",
+        ) {
             SettingStepperRow(
-                label = "${settings.walkingSpeed.metersPerMinute.toInt()} meters/min",
+                label = "Default pace",
+                value = "${settings.walkingSpeed.metersPerMinute.toInt()} m/min",
+                description = "Adjust in 5 meter/minute steps.",
                 onMinus = { model.updateWalkingSpeed((settings.walkingSpeed.metersPerMinute - 5).coerceAtLeast(30.0)) },
                 onPlus = { model.updateWalkingSpeed(settings.walkingSpeed.metersPerMinute + 5) },
             )
         }
-        Section("Notifications") {
-            Text("Status: ${model.notificationStatus.name}")
-            Button(onClick = model::requestNotificationPermission) {
-                Text("Request permission")
+        NotificationSettingsPanel(
+            status = model.notificationStatus,
+            onRequestPermission = model::requestNotificationPermission,
+        )
+    }
+}
+
+@Composable
+private fun SettingsOverviewCard(
+    earlyWindow: String,
+    walkingSpeed: String,
+    notificationStatus: NotificationPermissionStatus,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "Settings",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "Tune the timing defaults behind every leave window.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                ) {
+                    Text(
+                        "Defaults",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
+            CompactAware { compact ->
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SettingsMetricPill("Window", earlyWindow)
+                        SettingsMetricPill("Walk", walkingSpeed)
+                        SettingsMetricPill("Alerts", notificationStatus.name)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SettingsMetricPill("Window", earlyWindow, modifier = Modifier.weight(1f))
+                        SettingsMetricPill("Walk", walkingSpeed, modifier = Modifier.weight(1f))
+                        SettingsMetricPill("Alerts", notificationStatus.name, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsMetricPill(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsPanel(
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = 520f, dampingRatio = 0.86f)),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun NotificationSettingsPanel(
+    status: NotificationPermissionStatus,
+    onRequestPermission: () -> Unit,
+) {
+    SettingsPanel(
+        title = "Notifications",
+        subtitle = "Alerts are only used for window open and final call timing.",
+    ) {
+        CompactAware { compact ->
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    NotificationStatusSurface(status)
+                    Button(
+                        onClick = onRequestPermission,
+                        enabled = status != NotificationPermissionStatus.Unsupported,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        ButtonLabel(if (status == NotificationPermissionStatus.Granted) "Refresh status" else "Enable alerts")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        NotificationStatusSurface(status)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Button(
+                        onClick = onRequestPermission,
+                        enabled = status != NotificationPermissionStatus.Unsupported,
+                    ) {
+                        ButtonLabel(if (status == NotificationPermissionStatus.Granted) "Refresh status" else "Enable alerts")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationStatusSurface(status: NotificationPermissionStatus) {
+    val denied = status == NotificationPermissionStatus.Denied
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (denied) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (denied) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(
+            1.dp,
+            if (denied) MaterialTheme.colorScheme.error.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text("Current status", style = MaterialTheme.typography.labelMedium)
+            Text(
+                status.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1671,9 +1897,23 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedButton(onClick = onMinus) { ButtonLabel("-") }
-        OutlinedButton(onClick = onPlus) { ButtonLabel("+") }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = onMinus,
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            contentPadding = ButtonDefaults.ContentPadding,
+        ) {
+            ButtonLabel("-")
+        }
+        Button(
+            onClick = onPlus,
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            contentPadding = ButtonDefaults.ContentPadding,
+        ) {
+            ButtonLabel("+")
+        }
     }
 }
 
@@ -1844,17 +2084,87 @@ private fun PlaceSummary(name: String, locationText: String) {
 }
 
 @Composable
-private fun SettingStepperRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+private fun SettingStepperRow(
+    label: String,
+    value: String,
+    description: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
     CompactAware { compact ->
-        if (compact) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(label)
-                Stepper(onMinus = onMinus, onPlus = onPlus)
+        val textBlock: @Composable (Modifier) -> Unit = { modifier ->
+            Column(
+                modifier = modifier,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(label)
-                Stepper(onMinus = onMinus, onPlus = onPlus)
+        }
+        val valuePill: @Composable () -> Unit = {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)),
+            ) {
+                Text(
+                    value,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = MaterialTheme.shapes.large,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            textBlock(Modifier.weight(1f))
+                            Spacer(Modifier.width(10.dp))
+                            valuePill()
+                        }
+                        Stepper(onMinus = onMinus, onPlus = onPlus)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        textBlock(Modifier.weight(1f))
+                        Spacer(Modifier.width(12.dp))
+                        valuePill()
+                        Spacer(Modifier.width(12.dp))
+                        Stepper(onMinus = onMinus, onPlus = onPlus)
+                    }
+                }
             }
         }
     }

@@ -64,6 +64,12 @@ private object AndroidTimeProvider : TimeProvider {
         return calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
     }
 
+    override fun nowSecondsOfDay(): Int {
+        val calendar = Calendar.getInstance()
+        return (calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)) * 60 +
+                calendar.get(Calendar.SECOND)
+    }
+
     override fun currentWeekday(): Weekday {
         val calendar = Calendar.getInstance()
         return when (calendar.get(Calendar.DAY_OF_WEEK)) {

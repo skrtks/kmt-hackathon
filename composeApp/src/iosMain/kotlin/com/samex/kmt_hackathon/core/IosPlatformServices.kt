@@ -3,6 +3,7 @@ package com.samex.kmt_hackathon.core
 import platform.Foundation.NSCalendar
 import platform.Foundation.NSCalendarUnitHour
 import platform.Foundation.NSCalendarUnitMinute
+import platform.Foundation.NSCalendarUnitSecond
 import platform.Foundation.NSCalendarUnitWeekday
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateComponents
@@ -97,6 +98,15 @@ private object IosTimeProvider : TimeProvider {
         val hour = calendar.component(NSCalendarUnitHour, fromDate = now).toInt()
         val minute = calendar.component(NSCalendarUnitMinute, fromDate = now).toInt()
         return hour * 60 + minute
+    }
+
+    override fun nowSecondsOfDay(): Int {
+        val calendar = NSCalendar.currentCalendar
+        val now = NSDate()
+        val hour = calendar.component(NSCalendarUnitHour, fromDate = now).toInt()
+        val minute = calendar.component(NSCalendarUnitMinute, fromDate = now).toInt()
+        val second = calendar.component(NSCalendarUnitSecond, fromDate = now).toInt()
+        return (hour * 60 + minute) * 60 + second
     }
 
     override fun currentWeekday(): Weekday {

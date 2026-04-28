@@ -51,6 +51,11 @@ private object JvmTimeProvider : TimeProvider {
         return now.hour * 60 + now.minute
     }
 
+    override fun nowSecondsOfDay(): Int {
+        val now = LocalTime.now()
+        return (now.hour * 60 + now.minute) * 60 + now.second
+    }
+
     override fun currentWeekday(): Weekday =
         when (java.time.LocalDate.now().dayOfWeek) {
             DayOfWeek.MONDAY -> Weekday.Monday

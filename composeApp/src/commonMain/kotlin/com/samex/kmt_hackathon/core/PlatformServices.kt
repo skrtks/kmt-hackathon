@@ -22,6 +22,7 @@ interface NotificationScheduler {
 
 interface TimeProvider {
     fun nowMinutesOfDay(): Int
+    fun nowSecondsOfDay(): Int
     fun currentWeekday(): Weekday
 }
 

@@ -201,5 +201,7 @@ private class FakeModelTimeProvider(
 ) : TimeProvider {
     override fun nowMinutesOfDay(): Int = now
 
+    override fun nowSecondsOfDay(): Int = now * 60
+
     override fun currentWeekday(): Weekday = weekday
 }
