@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -174,7 +176,7 @@ private fun Header(model: TransitAppModel) {
 
 @Composable
 private fun HeaderTitle(model: TransitAppModel) {
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "Leave Window",
             style = MaterialTheme.typography.headlineMedium,
@@ -1778,17 +1780,44 @@ private fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit) {
             onClick = onMinus,
             modifier = Modifier.size(48.dp),
             shape = CircleShape,
-            contentPadding = ButtonDefaults.ContentPadding,
+            contentPadding = PaddingValues(0.dp),
         ) {
-            ButtonLabel("-")
+            StepperMark(isPlus = false)
         }
         Button(
             onClick = onPlus,
             modifier = Modifier.size(48.dp),
             shape = CircleShape,
-            contentPadding = ButtonDefaults.ContentPadding,
+            contentPadding = PaddingValues(0.dp),
         ) {
-            ButtonLabel("+")
+            StepperMark(isPlus = true)
+        }
+    }
+}
+
+@Composable
+private fun StepperMark(isPlus: Boolean) {
+    val color = LocalContentColor.current
+    Canvas(modifier = Modifier.size(16.dp)) {
+        val inset = 2.dp.toPx()
+        val strokeWidth = 2.5.dp.toPx()
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+        drawLine(
+            color = color,
+            start = Offset(inset, centerY),
+            end = Offset(size.width - inset, centerY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        if (isPlus) {
+            drawLine(
+                color = color,
+                start = Offset(centerX, inset),
+                end = Offset(centerX, size.height - inset),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
         }
     }
 }
