@@ -32,8 +32,10 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.wear.ongoing)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.google.play.services.wearable)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
