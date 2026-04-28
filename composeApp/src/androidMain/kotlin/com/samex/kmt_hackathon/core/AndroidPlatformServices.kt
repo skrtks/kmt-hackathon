@@ -40,7 +40,7 @@ actual object PlatformServices {
 
     actual fun timeProvider(): TimeProvider = AndroidTimeProvider
 
-    actual fun liveActivityController(): LiveActivityController = NoopLiveActivityController
+    actual fun liveActivityController(): LiveActivityController = AndroidLiveActivityController(requireContext())
 
     private fun requireContext(): Context {
         check(::applicationContext.isInitialized) {
@@ -264,6 +264,68 @@ private class AndroidNotificationScheduler(
     }
 }
 
+private class AndroidLiveActivityController(
+    private val context: Context,
+) : LiveActivityController {
+    private val preferences = context.getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
+
+    override fun isSupported(): Boolean = canPostNotifications(context)
+
+    override fun isActivityRunning(): Boolean =
+        preferences.getBoolean(KEY_LIVE_ACTIVITY_RUNNING, false)
+
+    override fun start(snapshot: LiveActivitySnapshot) {
+        post(snapshot)
+    }
+
+    override fun update(snapshot: LiveActivitySnapshot) {
+        post(snapshot)
+    }
+
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+        NotificationManagerCompat.from(context).cancel(LIVE_ACTIVITY_NOTIFICATION_ID)
+        preferences.edit()
+            .remove(KEY_LIVE_ACTIVITY_RUNNING)
+            .remove(KEY_LIVE_ACTIVITY_COMMUTE_ID)
+            .remove(KEY_LIVE_ACTIVITY_GROUP_ID)
+            .apply()
+    }
+
+    private fun post(snapshot: LiveActivitySnapshot) {
+        if (!canPostNotifications(context)) return
+        createLiveActivityChannel(context)
+        val notification = NotificationCompat.Builder(context, LIVE_ACTIVITY_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(snapshot.title)
+            .setContentText(liveActivityContentText(snapshot))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(liveActivityBigText(snapshot)))
+            .setContentIntent(launchPendingIntent(context))
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(formatMinutesOfDay(snapshot.finalCallMinutes))
+            .setSilent(true)
+            .setWhen(targetMillis(snapshot.finalCallMinutes))
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(LIVE_ACTIVITY_NOTIFICATION_ID, notification)
+            preferences.edit()
+                .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
+                .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
+                .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
+                .apply()
+        } catch (_: SecurityException) {
+            // Permission can be revoked between the explicit check and notify().
+        }
+    }
+}
+
 class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
@@ -282,7 +344,12 @@ class NotificationReceiver : BroadcastReceiver() {
 private const val CHANNEL_ID = "leave_window_alerts"
 private const val KEY_SCHEDULED_IDS = "scheduled_notification_ids"
 private const val KEY_DELIVERED_IDS = "delivered_notification_ids"
+private const val KEY_LIVE_ACTIVITY_RUNNING = "live_activity_running"
+private const val KEY_LIVE_ACTIVITY_COMMUTE_ID = "live_activity_commute_id"
+private const val KEY_LIVE_ACTIVITY_GROUP_ID = "live_activity_group_id"
 private const val NOTIFICATION_PREFERENCES = "leave_window_notifications"
+private const val LIVE_ACTIVITY_CHANNEL_ID = "active_watch_status"
+private const val LIVE_ACTIVITY_NOTIFICATION_ID = 41_080
 
 private fun createChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -294,26 +361,67 @@ private fun createChannel(context: Context) {
     context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 }
 
+private fun createLiveActivityChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val channel = NotificationChannel(
+        LIVE_ACTIVITY_CHANNEL_ID,
+        "Active watch status",
+        NotificationManager.IMPORTANCE_LOW,
+    )
+    context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+}
+
 private fun postNotification(context: Context, id: String, title: String, body: String) {
     if (!canPostNotifications(context) || !markNotificationDelivered(context, id)) return
     createChannel(context)
-    val launchIntent = Intent(context, MainActivity::class.java)
-    val contentIntent = PendingIntent.getActivity(
-        context,
-        0,
-        launchIntent,
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(R.mipmap.ic_launcher)
         .setContentTitle(title)
         .setContentText(body)
         .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-        .setContentIntent(contentIntent)
+        .setContentIntent(launchPendingIntent(context))
         .setAutoCancel(true)
         .build()
 
     NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+}
+
+private fun launchPendingIntent(context: Context): PendingIntent {
+    val launchIntent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+    }
+    return PendingIntent.getActivity(
+        context,
+        0,
+        launchIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
+private fun liveActivityContentText(snapshot: LiveActivitySnapshot): String =
+    "${snapshot.lineLabel} to ${snapshot.directionHeadsign} - ${snapshot.walkingMinutes} min walk"
+
+private fun liveActivityBigText(snapshot: LiveActivitySnapshot): String =
+    listOf(
+        snapshot.body,
+        "${snapshot.stopName} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}",
+        "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}",
+    ).joinToString("\n")
+
+private fun targetMillis(minutesOfDay: Int): Long {
+    val now = Calendar.getInstance()
+    val nowSeconds = (now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)) * 60 +
+        now.get(Calendar.SECOND)
+    val targetSeconds = minutesOfDay * 60
+    return Calendar.getInstance().apply {
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        set(Calendar.HOUR_OF_DAY, minutesOfDay / 60)
+        set(Calendar.MINUTE, minutesOfDay % 60)
+        if (targetSeconds < nowSeconds - 600) {
+            add(Calendar.DATE, 1)
+        }
+    }.timeInMillis
 }
 
 private fun canPostNotifications(context: Context): Boolean =
