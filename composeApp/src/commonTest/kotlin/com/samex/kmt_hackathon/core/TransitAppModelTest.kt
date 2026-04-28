@@ -78,10 +78,10 @@ class TransitAppModelTest {
         val model = model(repository, now = 8 * 60)
 
         model.load()
-        model.updateColorTheme(AppColorTheme.IntelliJ)
+        model.updateColorTheme(AppColorTheme.Berry)
 
-        assertEquals(AppColorTheme.IntelliJ, model.userData.settings.colorTheme)
-        assertEquals(AppColorTheme.IntelliJ, repository.load().settings.colorTheme)
+        assertEquals(AppColorTheme.Berry, model.userData.settings.colorTheme)
+        assertEquals(AppColorTheme.Berry, repository.load().settings.colorTheme)
     }
 
     @Test

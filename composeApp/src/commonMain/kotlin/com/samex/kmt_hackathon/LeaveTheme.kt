@@ -2,7 +2,6 @@ package com.samex.kmt_hackathon
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -113,24 +112,6 @@ private val BerryStatusColors = LeaveStatusColors(
     missedContainer = Color(0xFFFFDAD5),
     onMissedContainer = Color(0xFF3B0805),
     missedBackground = Color(0xFFFFF1EF),
-)
-
-private val IntelliJStatusColors = LeaveStatusColors(
-    signal = Color(0xFF0A84FF),
-    onSignal = Color(0xFFFFFFFF),
-    signalContainer = Color(0xFF0A84FF),
-    onSignalContainer = Color(0xFFFFFFFF),
-    signalBackground = Color(0xFF13002E),
-    route = Color(0xFFFF7A1A),
-    routeContainer = Color(0xFFFF7A1A),
-    onRouteContainer = Color(0xFF000000),
-    finalCall = Color(0xFFFF8A1F),
-    finalCallContainer = Color(0xFFFF8A1F),
-    onFinalCallContainer = Color(0xFF000000),
-    finalCallBackground = Color(0xFF1B0630),
-    missedContainer = Color(0xFFFF2D7A),
-    onMissedContainer = Color(0xFFFFFFFF),
-    missedBackground = Color(0xFF260018),
 )
 
 private val SunriseColorScheme = lightColorScheme(
@@ -249,36 +230,6 @@ private val BerryColorScheme = lightColorScheme(
     inverseOnSurface = Color(0xFFFFEDEC),
 )
 
-private val IntelliJColorScheme = darkColorScheme(
-    primary = Color(0xFF0A84FF),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFF5B21D6),
-    onPrimaryContainer = Color(0xFFFFFFFF),
-    secondary = Color(0xFFFF7A1A),
-    onSecondary = Color(0xFF000000),
-    secondaryContainer = Color(0xFFFF7A1A),
-    onSecondaryContainer = Color(0xFF000000),
-    tertiary = Color(0xFFFF2D7A),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFF2D7A),
-    onTertiaryContainer = Color(0xFFFFFFFF),
-    error = Color(0xFFFF2D7A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = IntelliJStatusColors.missedContainer,
-    onErrorContainer = IntelliJStatusColors.onMissedContainer,
-    background = Color(0xFF2B0A73),
-    onBackground = Color(0xFFFFFFFF),
-    surface = Color(0xFF07000F),
-    onSurface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFF35106F),
-    onSurfaceVariant = Color(0xFFF4E9FF),
-    outline = Color(0xFFC6A8FF),
-    outlineVariant = Color(0xFF7A44FF),
-    inverseSurface = Color(0xFFFFFFFF),
-    inverseOnSurface = Color(0xFF07000F),
-    inversePrimary = Color(0xFF004EAE),
-)
-
 private val LocalLeaveStatusColors = staticCompositionLocalOf { SunriseStatusColors }
 
 fun leaveThemeSpec(theme: AppColorTheme): LeaveThemeSpec =
@@ -310,13 +261,6 @@ fun leaveThemeSpec(theme: AppColorTheme): LeaveThemeSpec =
             description = "Soft and lively",
             colorScheme = BerryColorScheme,
             statusColors = BerryStatusColors,
-        )
-        AppColorTheme.IntelliJ -> LeaveThemeSpec(
-            theme = theme,
-            label = "IntelliJ",
-            description = "Flashy contrast",
-            colorScheme = IntelliJColorScheme,
-            statusColors = IntelliJStatusColors,
         )
     }
 

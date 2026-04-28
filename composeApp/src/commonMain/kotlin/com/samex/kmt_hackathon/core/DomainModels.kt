@@ -43,7 +43,6 @@ enum class AppColorTheme {
     Lagoon,
     Grove,
     Berry,
-    IntelliJ,
 }
 
 @Serializable
