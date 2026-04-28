@@ -449,7 +449,7 @@ private fun ActiveWatchHero(
             contentColor = contentColor,
         ),
         border = BorderStroke(2.dp, borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -1490,7 +1490,7 @@ private fun SettingsOverviewCard(
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
