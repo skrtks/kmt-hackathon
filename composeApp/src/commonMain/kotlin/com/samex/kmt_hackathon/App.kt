@@ -1,17 +1,16 @@
 package com.samex.kmt_hackathon
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -30,7 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.samex.kmt_hackathon.core.AppScreen
 import com.samex.kmt_hackathon.core.CommuteDraft
@@ -76,7 +77,7 @@ private fun AppContent(model: TransitAppModel) {
             .safeContentPadding()
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Header(model)
         model.errorMessage?.let { ErrorCard(it) }
@@ -100,44 +101,80 @@ private fun AppContent(model: TransitAppModel) {
 
 @Composable
 private fun Header(model: TransitAppModel) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
-            Text("Leave Window", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Now ${formatMinutesOfDay(model.nowMinutes)}", style = MaterialTheme.typography.bodyMedium)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { model.navigate(AppScreen.Home) }) { Text("Home") }
-            TextButton(onClick = { model.navigate(AppScreen.Settings) }) { Text("Settings") }
+    CompactAware { compact ->
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HeaderTitle(model)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NavButton("Home", onClick = { model.navigate(AppScreen.Home) })
+                    NavButton("Settings", onClick = { model.navigate(AppScreen.Settings) })
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HeaderTitle(model)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NavButton("Home", onClick = { model.navigate(AppScreen.Home) })
+                    NavButton("Settings", onClick = { model.navigate(AppScreen.Settings) })
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun HeaderTitle(model: TransitAppModel) {
+    Column {
+        Text(
+            "Leave Window",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text("Now ${formatMinutesOfDay(model.nowMinutes)}", style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
 private fun HomeScreen(model: TransitAppModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    CompactAware { compact ->
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         PermissionCard(model)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { model.beginCommuteSetup() }, enabled = model.userData.places.isNotEmpty()) {
-                Text("Add commute")
+            ActionButtons(compact) {
+                Button(
+                    onClick = { model.beginCommuteSetup() },
+                    enabled = model.userData.places.isNotEmpty(),
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Add commute")
+                }
+                OutlinedButton(
+                    onClick = { model.beginPlaceEditor() },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Add place")
+                }
+                OutlinedButton(
+                    onClick = { model.navigate(AppScreen.Places) },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Places")
+                }
             }
-            OutlinedButton(onClick = { model.beginPlaceEditor() }) {
-                Text("Add place")
-            }
-            OutlinedButton(onClick = { model.navigate(AppScreen.Places) }) {
-                Text("Places")
-            }
-        }
 
-        if (model.userData.commutes.isEmpty()) {
-            EmptyCard("No saved commutes yet. Create one from a saved place and mock stop.")
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(model.userData.commutes, key = { it.id }) { commute ->
+            if (model.userData.commutes.isEmpty()) {
+                EmptyCard("No saved commutes yet. Create one from a saved place and mock stop.")
+            } else {
+                model.userData.commutes.forEach { commute ->
                     val origin = model.userData.places.firstOrNull { it.id == commute.originPlaceId }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
@@ -155,29 +192,14 @@ private fun HomeScreen(model: TransitAppModel) {
                             Text(commute.schedule?.let {
                                 "Schedule ${it.days.joinToString { day -> day.name.take(3) }} ${formatMinutesOfDay(it.startMinutes)}-${formatMinutesOfDay(it.endMinutes)}"
                             } ?: "Manual start only")
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Auto-start")
-                                    Spacer(Modifier.width(8.dp))
-                                    Switch(
-                                        checked = commute.autoStartEnabled,
-                                        onCheckedChange = { model.toggleCommuteAutoStart(commute.id) },
-                                        enabled = commute.schedule != null,
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = { model.deleteCommute(commute.id) }) {
-                                        Text("Delete")
-                                    }
-                                    Button(onClick = { model.startWatch(commute.id) }) {
-                                        Text("Start")
-                                    }
-                                }
-                            }
+                            CommuteCardActions(
+                                compact = compact,
+                                autoStartEnabled = commute.autoStartEnabled,
+                                scheduleEnabled = commute.schedule != null,
+                                onAutoStartChange = { model.toggleCommuteAutoStart(commute.id) },
+                                onDelete = { model.deleteCommute(commute.id) },
+                                onStart = { model.startWatch(commute.id) },
+                            )
                         }
                     }
                 }
@@ -194,10 +216,15 @@ private fun PlaceEditor(model: TransitAppModel) {
     ) {
         Text("Create saved place", style = MaterialTheme.typography.titleLarge)
         Text("Use a preset for the mock app or enter coordinates manually.")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            model.presetPlaces.forEach { preset ->
-                OutlinedButton(onClick = { model.applyPresetPlace(preset) }) {
-                    Text(preset.name)
+        CompactAware { compact ->
+            ActionButtons(compact) {
+                model.presetPlaces.forEach { preset ->
+                    OutlinedButton(
+                        onClick = { model.applyPresetPlace(preset) },
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel(preset.name)
+                    }
                 }
             }
         }
@@ -207,27 +234,37 @@ private fun PlaceEditor(model: TransitAppModel) {
             label = { Text("Name") },
             modifier = Modifier.fillMaxWidth(),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = model.placeDraft.latitude,
-                onValueChange = { model.updatePlaceDraft(model.placeDraft.copy(latitude = it)) },
-                label = { Text("Latitude") },
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = model.placeDraft.longitude,
-                onValueChange = { model.updatePlaceDraft(model.placeDraft.copy(longitude = it)) },
-                label = { Text("Longitude") },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = model::savePlace) {
-                Text("Save place")
+        CompactAware { compact ->
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlaceCoordinateFields(
+                        model = model,
+                        latitudeModifier = Modifier.fillMaxWidth(),
+                        longitudeModifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlaceCoordinateFields(
+                        model = model,
+                        latitudeModifier = Modifier.weight(1f),
+                        longitudeModifier = Modifier.weight(1f),
+                    )
+                }
             }
-            if (!model.placeDraft.onboarding) {
-                OutlinedButton(onClick = { model.navigate(AppScreen.Home) }) {
-                    Text("Cancel")
+        }
+        CompactAware { compact ->
+            ActionButtons(compact) {
+                Button(onClick = model::savePlace, modifier = responsiveButtonModifier(compact)) {
+                    ButtonLabel("Save place")
+                }
+                if (!model.placeDraft.onboarding) {
+                    OutlinedButton(
+                        onClick = { model.navigate(AppScreen.Home) },
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Cancel")
+                    }
                 }
             }
         }
@@ -277,12 +314,17 @@ private fun CommuteSetup(model: TransitAppModel) {
         ArrivalBufferEditor(model, draft)
         ScheduleEditor(model, draft)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = model::saveCommute) {
-                Text("Save commute")
-            }
-            OutlinedButton(onClick = { model.navigate(AppScreen.Home) }) {
-                Text("Cancel")
+        CompactAware { compact ->
+            ActionButtons(compact) {
+                Button(onClick = model::saveCommute, modifier = responsiveButtonModifier(compact)) {
+                    ButtonLabel("Save commute")
+                }
+                OutlinedButton(
+                    onClick = { model.navigate(AppScreen.Home) },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Cancel")
+                }
             }
         }
     }
@@ -298,21 +340,26 @@ private fun ArrivalBufferEditor(model: TransitAppModel, draft: CommuteDraft) {
             )
             Text("Override global default")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = draft.minEarlyMinutes,
-                onValueChange = { model.updateCommuteDraft(draft.copy(minEarlyMinutes = it)) },
-                label = { Text("At least early") },
-                enabled = draft.overrideArrivalBuffer,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = draft.maxEarlyMinutes,
-                onValueChange = { model.updateCommuteDraft(draft.copy(maxEarlyMinutes = it)) },
-                label = { Text("At most early") },
-                enabled = draft.overrideArrivalBuffer,
-                modifier = Modifier.weight(1f),
-            )
+        CompactAware { compact ->
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ArrivalBufferFields(
+                        model = model,
+                        draft = draft,
+                        minModifier = Modifier.fillMaxWidth(),
+                        maxModifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ArrivalBufferFields(
+                        model = model,
+                        draft = draft,
+                        minModifier = Modifier.weight(1f),
+                        maxModifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }
@@ -327,21 +374,26 @@ private fun ScheduleEditor(model: TransitAppModel, draft: CommuteDraft) {
             )
             Text("Enable auto-start schedule")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = draft.scheduleStart,
-                onValueChange = { model.updateCommuteDraft(draft.copy(scheduleStart = it)) },
-                label = { Text("Start") },
-                enabled = draft.scheduleEnabled,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = draft.scheduleEnd,
-                onValueChange = { model.updateCommuteDraft(draft.copy(scheduleEnd = it)) },
-                label = { Text("End") },
-                enabled = draft.scheduleEnabled,
-                modifier = Modifier.weight(1f),
-            )
+        CompactAware { compact ->
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ScheduleTimeFields(
+                        model = model,
+                        draft = draft,
+                        startModifier = Modifier.fillMaxWidth(),
+                        endModifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ScheduleTimeFields(
+                        model = model,
+                        draft = draft,
+                        startModifier = Modifier.weight(1f),
+                        endModifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
         Weekday.entries.forEach { day ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -385,15 +437,28 @@ private fun WatchScreen(model: TransitAppModel) {
                     Text(group.windows.joinToString { "${it.lineShortName} to ${it.headsign}" })
                 } ?: Text("No upcoming departure window.")
                 if (state.silenced) Text("Notifications silenced after leaving.")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = model::markLeaving, enabled = !state.silenced) {
-                        Text("I'm leaving")
-                    }
-                    OutlinedButton(onClick = model::skipCurrentGroup, enabled = state.currentGroup != null && !state.silenced) {
-                        Text("Skip this departure")
-                    }
-                    OutlinedButton(onClick = model::stopActiveSession) {
-                        Text("Stop")
+                CompactAware { compact ->
+                    ActionButtons(compact) {
+                        Button(
+                            onClick = model::markLeaving,
+                            enabled = !state.silenced,
+                            modifier = responsiveButtonModifier(compact),
+                        ) {
+                            ButtonLabel("I'm leaving")
+                        }
+                        OutlinedButton(
+                            onClick = model::skipCurrentGroup,
+                            enabled = state.currentGroup != null && !state.silenced,
+                            modifier = responsiveButtonModifier(compact),
+                        ) {
+                            ButtonLabel("Skip this departure")
+                        }
+                        OutlinedButton(
+                            onClick = model::stopActiveSession,
+                            modifier = responsiveButtonModifier(compact),
+                        ) {
+                            ButtonLabel("Stop")
+                        }
                     }
                 }
             }
@@ -401,12 +466,21 @@ private fun WatchScreen(model: TransitAppModel) {
 
         Text("Upcoming windows", style = MaterialTheme.typography.titleMedium)
         state.groups.take(8).forEach { group ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(group.windows.joinToString { "${it.lineShortName} ${formatMinutesOfDay(it.departureTimeMinutes)}" })
-                Text("${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
+            CompactAware { compact ->
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(group.windows.joinToString { "${it.lineShortName} ${formatMinutesOfDay(it.departureTimeMinutes)}" })
+                        Text("${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(group.windows.joinToString { "${it.lineShortName} ${formatMinutesOfDay(it.departureTimeMinutes)}" })
+                        Text("${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
+                    }
+                }
             }
             HorizontalDivider()
         }
@@ -416,23 +490,49 @@ private fun WatchScreen(model: TransitAppModel) {
 @Composable
 private fun PlacesScreen(model: TransitAppModel) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { model.beginPlaceEditor() }) { Text("Add place") }
-            OutlinedButton(onClick = { model.navigate(AppScreen.Home) }) { Text("Back") }
+        CompactAware { compact ->
+            ActionButtons(compact) {
+                Button(
+                    onClick = { model.beginPlaceEditor() },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Add place")
+                }
+                OutlinedButton(
+                    onClick = { model.navigate(AppScreen.Home) },
+                    modifier = responsiveButtonModifier(compact),
+                ) {
+                    ButtonLabel("Back")
+                }
+            }
         }
         model.userData.places.forEach { place ->
             Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text(place.name, style = MaterialTheme.typography.titleMedium)
-                        Text("${place.location.latitude}, ${place.location.longitude}")
-                    }
-                    OutlinedButton(onClick = { model.deletePlace(place.id) }) {
-                        Text("Delete")
+                CompactAware { compact ->
+                    if (compact) {
+                        Column(
+                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PlaceSummary(place.name, "${place.location.latitude}, ${place.location.longitude}")
+                            OutlinedButton(
+                                onClick = { model.deletePlace(place.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                ButtonLabel("Delete")
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PlaceSummary(place.name, "${place.location.latitude}, ${place.location.longitude}")
+                            OutlinedButton(onClick = { model.deletePlace(place.id) }) {
+                                ButtonLabel("Delete")
+                            }
+                        }
                     }
                 }
             }
@@ -446,44 +546,40 @@ private fun SettingsScreen(model: TransitAppModel) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         Section("Global arrival buffer") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("At least ${settings.defaultArrivalBuffer.minEarlyMinutes} min early")
-                Stepper(
-                    onMinus = {
-                        model.updateDefaultArrivalBuffer(
-                            (settings.defaultArrivalBuffer.minEarlyMinutes - 1).coerceAtLeast(0),
-                            settings.defaultArrivalBuffer.maxEarlyMinutes,
-                        )
-                    },
-                    onPlus = {
-                        model.updateDefaultArrivalBuffer(
-                            settings.defaultArrivalBuffer.minEarlyMinutes + 1,
-                            settings.defaultArrivalBuffer.maxEarlyMinutes.coerceAtLeast(settings.defaultArrivalBuffer.minEarlyMinutes + 1),
-                        )
-                    },
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("At most ${settings.defaultArrivalBuffer.maxEarlyMinutes} min early")
-                Stepper(
-                    onMinus = {
-                        model.updateDefaultArrivalBuffer(
-                            settings.defaultArrivalBuffer.minEarlyMinutes,
-                            (settings.defaultArrivalBuffer.maxEarlyMinutes - 1).coerceAtLeast(settings.defaultArrivalBuffer.minEarlyMinutes),
-                        )
-                    },
-                    onPlus = {
-                        model.updateDefaultArrivalBuffer(
-                            settings.defaultArrivalBuffer.minEarlyMinutes,
-                            settings.defaultArrivalBuffer.maxEarlyMinutes + 1,
-                        )
-                    },
-                )
-            }
+            SettingStepperRow(
+                label = "At least ${settings.defaultArrivalBuffer.minEarlyMinutes} min early",
+                onMinus = {
+                    model.updateDefaultArrivalBuffer(
+                        (settings.defaultArrivalBuffer.minEarlyMinutes - 1).coerceAtLeast(0),
+                        settings.defaultArrivalBuffer.maxEarlyMinutes,
+                    )
+                },
+                onPlus = {
+                    model.updateDefaultArrivalBuffer(
+                        settings.defaultArrivalBuffer.minEarlyMinutes + 1,
+                        settings.defaultArrivalBuffer.maxEarlyMinutes.coerceAtLeast(settings.defaultArrivalBuffer.minEarlyMinutes + 1),
+                    )
+                },
+            )
+            SettingStepperRow(
+                label = "At most ${settings.defaultArrivalBuffer.maxEarlyMinutes} min early",
+                onMinus = {
+                    model.updateDefaultArrivalBuffer(
+                        settings.defaultArrivalBuffer.minEarlyMinutes,
+                        (settings.defaultArrivalBuffer.maxEarlyMinutes - 1).coerceAtLeast(settings.defaultArrivalBuffer.minEarlyMinutes),
+                    )
+                },
+                onPlus = {
+                    model.updateDefaultArrivalBuffer(
+                        settings.defaultArrivalBuffer.minEarlyMinutes,
+                        settings.defaultArrivalBuffer.maxEarlyMinutes + 1,
+                    )
+                },
+            )
         }
         Section("Walking speed") {
-            Text("${settings.walkingSpeed.metersPerMinute.toInt()} meters/min")
-            Stepper(
+            SettingStepperRow(
+                label = "${settings.walkingSpeed.metersPerMinute.toInt()} meters/min",
                 onMinus = { model.updateWalkingSpeed((settings.walkingSpeed.metersPerMinute - 5).coerceAtLeast(30.0)) },
                 onPlus = { model.updateWalkingSpeed(settings.walkingSpeed.metersPerMinute + 5) },
             )
@@ -501,17 +597,37 @@ private fun SettingsScreen(model: TransitAppModel) {
 private fun PermissionCard(model: TransitAppModel) {
     if (model.notificationStatus == NotificationPermissionStatus.Granted) return
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Notifications are ${model.notificationStatus.name.lowercase()}")
-                Text("Foreground watching still works.")
+        CompactAware { compact ->
+            val buttonVisible = model.notificationStatus != NotificationPermissionStatus.Unsupported
+            val message = if (model.notificationStatus == NotificationPermissionStatus.Unsupported) {
+                "Notifications are unsupported on this platform. Foreground watching still works."
+            } else {
+                "Notifications are ${model.notificationStatus.name.lowercase()}. Foreground watching still works."
             }
-            Button(onClick = model::requestNotificationPermission) {
-                Text("Enable")
+            if (compact || !buttonVisible) {
+                Column(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(message)
+                    if (buttonVisible) {
+                        Button(onClick = model::requestNotificationPermission, modifier = Modifier.fillMaxWidth()) {
+                            ButtonLabel("Enable")
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(message, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(12.dp))
+                    Button(onClick = model::requestNotificationPermission) {
+                        ButtonLabel("Enable")
+                    }
+                }
             }
         }
     }
@@ -522,9 +638,15 @@ private fun ReplacementPrompt(onConfirm: () -> Unit, onCancel: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Another watch session is active.")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onConfirm) { Text("Replace") }
-                OutlinedButton(onClick = onCancel) { Text("Keep current") }
+            CompactAware { compact ->
+                ActionButtons(compact) {
+                    Button(onClick = onConfirm, modifier = responsiveButtonModifier(compact)) {
+                        ButtonLabel("Replace")
+                    }
+                    OutlinedButton(onClick = onCancel, modifier = responsiveButtonModifier(compact)) {
+                        ButtonLabel("Keep current")
+                    }
+                }
             }
         }
     }
@@ -549,8 +671,191 @@ private fun SelectRow(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedButton(onClick = onMinus) { Text("-") }
-        OutlinedButton(onClick = onPlus) { Text("+") }
+        OutlinedButton(onClick = onMinus) { ButtonLabel("-") }
+        OutlinedButton(onClick = onPlus) { ButtonLabel("+") }
+    }
+}
+
+@Composable
+private fun CompactAware(
+    threshold: Dp = 520.dp,
+    content: @Composable (compact: Boolean) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        content(maxWidth < threshold)
+    }
+}
+
+@Composable
+private fun ActionButtons(compact: Boolean, content: @Composable () -> Unit) {
+    if (compact) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            content()
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            content()
+        }
+    }
+}
+
+private fun responsiveButtonModifier(compact: Boolean): Modifier =
+    if (compact) Modifier.fillMaxWidth() else Modifier.widthIn(min = 96.dp)
+
+@Composable
+private fun ButtonLabel(text: String) {
+    Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+@Composable
+private fun NavButton(text: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.widthIn(min = 72.dp)) {
+        ButtonLabel(text)
+    }
+}
+
+@Composable
+private fun PlaceCoordinateFields(
+    model: TransitAppModel,
+    latitudeModifier: Modifier,
+    longitudeModifier: Modifier,
+) {
+    OutlinedTextField(
+        value = model.placeDraft.latitude,
+        onValueChange = { model.updatePlaceDraft(model.placeDraft.copy(latitude = it)) },
+        label = { Text("Latitude") },
+        modifier = latitudeModifier,
+    )
+    OutlinedTextField(
+        value = model.placeDraft.longitude,
+        onValueChange = { model.updatePlaceDraft(model.placeDraft.copy(longitude = it)) },
+        label = { Text("Longitude") },
+        modifier = longitudeModifier,
+    )
+}
+
+@Composable
+private fun ArrivalBufferFields(
+    model: TransitAppModel,
+    draft: CommuteDraft,
+    minModifier: Modifier,
+    maxModifier: Modifier,
+) {
+    OutlinedTextField(
+        value = draft.minEarlyMinutes,
+        onValueChange = { model.updateCommuteDraft(draft.copy(minEarlyMinutes = it)) },
+        label = { Text("At least early") },
+        enabled = draft.overrideArrivalBuffer,
+        modifier = minModifier,
+    )
+    OutlinedTextField(
+        value = draft.maxEarlyMinutes,
+        onValueChange = { model.updateCommuteDraft(draft.copy(maxEarlyMinutes = it)) },
+        label = { Text("At most early") },
+        enabled = draft.overrideArrivalBuffer,
+        modifier = maxModifier,
+    )
+}
+
+@Composable
+private fun ScheduleTimeFields(
+    model: TransitAppModel,
+    draft: CommuteDraft,
+    startModifier: Modifier,
+    endModifier: Modifier,
+) {
+    OutlinedTextField(
+        value = draft.scheduleStart,
+        onValueChange = { model.updateCommuteDraft(draft.copy(scheduleStart = it)) },
+        label = { Text("Start") },
+        enabled = draft.scheduleEnabled,
+        modifier = startModifier,
+    )
+    OutlinedTextField(
+        value = draft.scheduleEnd,
+        onValueChange = { model.updateCommuteDraft(draft.copy(scheduleEnd = it)) },
+        label = { Text("End") },
+        enabled = draft.scheduleEnabled,
+        modifier = endModifier,
+    )
+}
+
+@Composable
+private fun CommuteCardActions(
+    compact: Boolean,
+    autoStartEnabled: Boolean,
+    scheduleEnabled: Boolean,
+    onAutoStartChange: () -> Unit,
+    onDelete: () -> Unit,
+    onStart: () -> Unit,
+) {
+    val autoStartControl: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Auto-start")
+            Spacer(Modifier.width(8.dp))
+            Switch(
+                checked = autoStartEnabled,
+                onCheckedChange = { onAutoStartChange() },
+                enabled = scheduleEnabled,
+            )
+        }
+    }
+    val actions: @Composable () -> Unit = {
+        OutlinedButton(onClick = onDelete, modifier = responsiveButtonModifier(compact)) {
+            ButtonLabel("Delete")
+        }
+        Button(onClick = onStart, modifier = responsiveButtonModifier(compact)) {
+            ButtonLabel("Start")
+        }
+    }
+
+    if (compact) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            autoStartControl()
+            ActionButtons(compact = true) { actions() }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            autoStartControl()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                actions()
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaceSummary(name: String, locationText: String) {
+    Column {
+        Text(name, style = MaterialTheme.typography.titleMedium)
+        Text(locationText)
+    }
+}
+
+@Composable
+private fun SettingStepperRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    CompactAware { compact ->
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(label)
+                Stepper(onMinus = onMinus, onPlus = onPlus)
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(label)
+                Stepper(onMinus = onMinus, onPlus = onPlus)
+            }
+        }
     }
 }
 
