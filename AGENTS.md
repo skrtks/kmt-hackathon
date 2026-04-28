@@ -58,3 +58,11 @@ The mock dataset includes stops, bus/tram/metro lines, API-style directions/head
 Transit leave-window companion app. Core concept: given a transit departure time, walking time, and desired early arrival buffer, compute when the user should leave and notify them. Key domain models to implement: **SavedPlace**, **SavedCommute**, **WatchSession**. Platform-specific adapters needed for notifications, background scheduling, and location — these go in `androidMain`/`iosMain`/`jvmMain` with `expect/actual` interfaces in `commonMain`.
 
 See `product-spec.md` for full MVP scope and timing formula. Treat `product-spec.md` as the source of truth for product decisions and expected behaviour of the app. When implementation details are underspecified, prefer conservative choices that match the spec and existing architecture; ask the user only when the ambiguity changes product behavior or creates meaningful implementation risk.
+
+## Plan Versioning
+
+Implementation plans live in `plan.md` unless a more specific plan file is requested. Plans must include a `major.minor.patch` version, target app version, status, last-updated date, and a version history. Increment the plan version as follows:
+
+- `major`: target or release scope changes substantially.
+- `minor`: implementation approach, product behavior, interfaces, or acceptance criteria change.
+- `patch`: clarifications, typo fixes, formatting, or non-behavioral edits.
