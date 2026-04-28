@@ -527,7 +527,7 @@ private fun ActiveWatchHero(
     val statusStyle = if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displaySmall
     val headline = statusHeadline(
         status = status,
-        departureTimeMinutes = currentGroup?.primaryWindow?.departureTimeMinutes,
+        leaveAtMinutes = currentGroup?.windowOpenMinutes,
     )
 
     Card(
@@ -2642,13 +2642,13 @@ private fun EmptyCard(message: String) {
     }
 }
 
-private fun statusHeadline(status: WatchStatus?, departureTimeMinutes: Int? = null): String {
-    val departureText = departureTimeMinutes?.let(::formatMinutesOfDay)
+private fun statusHeadline(status: WatchStatus?, leaveAtMinutes: Int? = null): String {
+    val leaveAtText = leaveAtMinutes?.let(::formatMinutesOfDay)
     return when (status) {
-        WatchStatus.GetReady -> departureText?.let { "Get ready for $it" } ?: "Get ready"
-        WatchStatus.LeaveNow -> departureText?.let { "Leave now for $it" } ?: "Leave now"
-        WatchStatus.FinalCall -> departureText?.let { "Final call for $it" } ?: "Final call"
-        WatchStatus.Missed -> departureText?.let { "Next chance at $it" } ?: "Next chance"
-        null -> departureText?.let { "Watching $it" } ?: "Watching"
+        WatchStatus.GetReady -> leaveAtText?.let { "Leave at $it" } ?: "Leave soon"
+        WatchStatus.LeaveNow -> "Leave now"
+        WatchStatus.FinalCall -> "Final call"
+        WatchStatus.Missed -> leaveAtText?.let { "Next chance at $it" } ?: "Next chance"
+        null -> leaveAtText?.let { "Leave at $it" } ?: "Watching"
     }
 }
