@@ -85,6 +85,24 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun settingsBackReturnsToPreviousScreen() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60)
+
+        model.load()
+        model.beginCommuteEdit("commute")
+        model.openSettings()
+
+        assertIs<AppScreen.Settings>(model.screen)
+
+        model.closeSettings()
+
+        assertIs<AppScreen.CommuteEdit>(model.screen)
+    }
+
+    @Test
     fun editingCommuteUpdatesSavedCommuteInPlace() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)

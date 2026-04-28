@@ -81,6 +81,8 @@ class TransitAppModel(
     var pendingReplacementCommuteId: String? by mutableStateOf(null)
         private set
 
+    private var settingsBackScreen: AppScreen = AppScreen.Home
+
     var errorMessage: String? by mutableStateOf(null)
         private set
 
@@ -126,6 +128,19 @@ class TransitAppModel(
 
     fun navigate(screen: AppScreen) {
         this.screen = screen
+        errorMessage = null
+    }
+
+    fun openSettings() {
+        if (screen != AppScreen.Settings) {
+            settingsBackScreen = screen
+        }
+        screen = AppScreen.Settings
+        errorMessage = null
+    }
+
+    fun closeSettings() {
+        screen = settingsBackScreen
         errorMessage = null
     }
 

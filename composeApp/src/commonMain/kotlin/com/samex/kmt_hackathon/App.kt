@@ -2,6 +2,7 @@ package com.samex.kmt_hackathon
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.TweenSpec
@@ -11,6 +12,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -129,7 +135,9 @@ private fun AppContent(model: TransitAppModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Header(model)
+            Header(
+                model = model,
+            )
             model.errorMessage?.let { ErrorCard(it) }
             model.pendingReplacementCommuteId?.let {
                 ReplacementPrompt(
@@ -138,28 +146,28 @@ private fun AppContent(model: TransitAppModel) {
                 )
             }
 
-            when (val screen = model.screen) {
-                AppScreen.Home -> HomeScreen(model)
-                is AppScreen.PlaceEditor -> PlaceEditor(model)
-                AppScreen.CommuteSetup -> CommuteSetup(model)
-                AppScreen.CommuteEdit -> CommuteEditScreen(model)
-                AppScreen.Settings -> SettingsScreen(model)
-                AppScreen.Places -> PlacesScreen(model)
-            }
+            AnimatedScreenContent(model)
         }
     }
 }
 
 @Composable
 private fun Header(model: TransitAppModel) {
-    CompactAware { compact ->
+    if (model.screen == AppScreen.Settings) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            NavButton("Back", onClick = model::closeSettings)
+        }
+        return
+    }
+
+    CompactAware(threshold = 320.dp) { compact ->
         if (compact) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeaderTitle(model)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NavButton("Home", onClick = { model.navigate(AppScreen.Home) })
-                    NavButton("Settings", onClick = { model.navigate(AppScreen.Settings) })
-                }
+                NavButton("Settings", onClick = model::openSettings)
             }
         } else {
             Row(
@@ -167,19 +175,55 @@ private fun Header(model: TransitAppModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                HeaderTitle(model)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NavButton("Home", onClick = { model.navigate(AppScreen.Home) })
-                    NavButton("Settings", onClick = { model.navigate(AppScreen.Settings) })
-                }
+                HeaderTitle(model, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(12.dp))
+                NavButton("Settings", onClick = model::openSettings)
             }
         }
     }
 }
 
 @Composable
-private fun HeaderTitle(model: TransitAppModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun AnimatedScreenContent(model: TransitAppModel) {
+    AnimatedContent(
+        targetState = model.screen,
+        transitionSpec = {
+            when {
+                targetState == AppScreen.Settings -> {
+                    val enterFromRight = slideInHorizontally(animationSpec = tween(260)) { width -> width } +
+                            fadeIn(tween(180))
+                    val exitToLeft = slideOutHorizontally(animationSpec = tween(220)) { width -> -width / 3 } +
+                            fadeOut(tween(160))
+                    enterFromRight togetherWith exitToLeft
+                }
+
+                initialState == AppScreen.Settings -> {
+                    val enterFromLeft = slideInHorizontally(animationSpec = tween(260)) { width -> -width / 3 } +
+                            fadeIn(tween(180))
+                    val exitToRight = slideOutHorizontally(animationSpec = tween(220)) { width -> width } +
+                            fadeOut(tween(160))
+                    enterFromLeft togetherWith exitToRight
+                }
+
+                else -> fadeIn(tween(120)) togetherWith fadeOut(tween(120))
+            }
+        },
+        label = "screenContent",
+    ) { screen ->
+        when (screen) {
+            AppScreen.Home -> HomeScreen(model)
+            is AppScreen.PlaceEditor -> PlaceEditor(model)
+            AppScreen.CommuteSetup -> CommuteSetup(model)
+            AppScreen.CommuteEdit -> CommuteEditScreen(model)
+            AppScreen.Settings -> SettingsScreen(model)
+            AppScreen.Places -> PlacesScreen(model)
+        }
+    }
+}
+
+@Composable
+private fun HeaderTitle(model: TransitAppModel, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "Leave Window",
             style = MaterialTheme.typography.headlineMedium,
@@ -1659,10 +1703,10 @@ private fun PlacesScreen(model: TransitAppModel) {
 }
 
 @Composable
-private fun SettingsScreen(model: TransitAppModel) {
+private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier) {
     val settings = model.userData.settings
     Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
+        modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         SettingsOverviewCard(
