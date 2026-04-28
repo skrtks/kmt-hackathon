@@ -1,0 +1,7 @@
+TEAM_ID=
+
+PRODUCT_NAME=kmt_hackathon
+PRODUCT_BUNDLE_IDENTIFIER=com.samex.kmt_hackathon.kmt_hackathon$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
