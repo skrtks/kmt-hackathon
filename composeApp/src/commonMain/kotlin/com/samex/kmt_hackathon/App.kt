@@ -57,7 +57,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -79,7 +78,6 @@ import com.samex.kmt_hackathon.transit.LineDirection
 import com.samex.kmt_hackathon.transit.TransitStop
 import kotlinx.coroutines.delay
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
@@ -388,6 +386,10 @@ private fun ActiveWatchHero(
         compact -> MaterialTheme.typography.headlineLarge
         else -> MaterialTheme.typography.displaySmall
     }
+    val headline = statusHeadline(
+        status = status,
+        departureTimeMinutes = currentGroup?.primaryWindow?.departureTimeMinutes,
+    )
 
     Card(
         modifier = Modifier
@@ -407,7 +409,7 @@ private fun ActiveWatchHero(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    statusHeadline(status),
+                    headline,
                     style = statusStyle,
                     fontWeight = FontWeight.Bold,
                     color = contentColor,
@@ -430,17 +432,9 @@ private fun ActiveWatchHero(
             )
 
             currentGroup?.let { group ->
-                if (!summary) {
-                    ScallopedDepartureBadge(
-                        status = status,
-                        departureText = formatMinutesOfDay(group.primaryWindow.departureTimeMinutes),
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                }
                 if (compact || summary) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         WatchMetric("Leave window", "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-                        WatchMetric("Departure", formatMinutesOfDay(group.primaryWindow.departureTimeMinutes))
                         WatchMetric("Walk", "${state.walkingTimeMinutes} min from ${state.origin.name}")
                     }
                 } else {
@@ -448,11 +442,6 @@ private fun ActiveWatchHero(
                         WatchMetric(
                             label = "Leave window",
                             value = "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}",
-                            modifier = Modifier.weight(1f),
-                        )
-                        WatchMetric(
-                            label = "Departure",
-                            value = formatMinutesOfDay(group.primaryWindow.departureTimeMinutes),
                             modifier = Modifier.weight(1f),
                         )
                         WatchMetric(
@@ -494,75 +483,6 @@ private fun ActiveWatchHero(
             }
 
             actions()
-        }
-    }
-}
-
-@Composable
-private fun ScallopedDepartureBadge(
-    status: WatchStatus?,
-    departureText: String,
-    modifier: Modifier = Modifier,
-) {
-    val fillColor by animateColorAsState(
-        targetValue = statusBadgeColor(status),
-        animationSpec = TweenSpec(durationMillis = 300),
-        label = "departureBadgeFill",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = statusBorderColor(status),
-        animationSpec = TweenSpec(durationMillis = 300),
-        label = "departureBadgeBorder",
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (status == WatchStatus.FinalCall) 1.04f else 1f,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
-        label = "departureBadgeScale",
-    )
-    Box(
-        modifier = modifier
-            .size(178.dp)
-            .graphicsLayer(scaleX = scale, scaleY = scale),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val path = scallopedOvalPath(
-                width = size.width,
-                height = size.height,
-                lobes = 18,
-                amplitude = size.minDimension * 0.035f,
-            )
-            drawPath(path = path, color = fillColor)
-            drawPath(
-                path = path,
-                color = borderColor,
-                style = Stroke(width = 2.dp.toPx()),
-            )
-        }
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                statusHeadline(status),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                departureText,
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            Text(
-                "departure",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -787,16 +707,6 @@ private fun statusBorderColor(status: WatchStatus?): Color =
     }
 
 @Composable
-private fun statusBadgeColor(status: WatchStatus?): Color =
-    when (status) {
-        WatchStatus.GetReady -> MaterialTheme.colorScheme.surfaceVariant
-        WatchStatus.LeaveNow -> MaterialTheme.colorScheme.surface
-        WatchStatus.FinalCall -> Color(0xFFFFE7C7)
-        WatchStatus.Missed -> MaterialTheme.colorScheme.errorContainer
-        null -> MaterialTheme.colorScheme.surfaceVariant
-    }
-
-@Composable
 private fun routeAccentColor(index: Int): Color =
     when (index.mod(4)) {
         0 -> MaterialTheme.colorScheme.primary
@@ -811,28 +721,6 @@ private fun leaveWindowProgressFraction(windowOpenMinutes: Int, finalCallMinutes
     if (finalCallSeconds <= openSeconds) return 1f
     return ((nowSecondsOfDay - openSeconds).toFloat() / (finalCallSeconds - openSeconds).toFloat())
         .coerceIn(0f, 1f)
-}
-
-private fun scallopedOvalPath(width: Float, height: Float, lobes: Int, amplitude: Float): Path {
-    val path = Path()
-    val centerX = width / 2f
-    val centerY = height / 2f
-    val baseRadiusX = width / 2f - amplitude * 2f
-    val baseRadiusY = height / 2f - amplitude * 2f
-    val steps = lobes * 10
-    for (step in 0..steps) {
-        val angle = (step / steps.toDouble()) * 2.0 * PI
-        val wave = sin(angle * lobes).toFloat() * amplitude
-        val x = centerX + cos(angle).toFloat() * (baseRadiusX + wave)
-        val y = centerY + sin(angle).toFloat() * (baseRadiusY + wave)
-        if (step == 0) {
-            path.moveTo(x, y)
-        } else {
-            path.lineTo(x, y)
-        }
-    }
-    path.close()
-    return path
 }
 
 private fun commuteOriginName(model: TransitAppModel, commute: SavedCommute): String =
@@ -2204,11 +2092,13 @@ private fun EmptyCard(message: String) {
     }
 }
 
-private fun statusHeadline(status: WatchStatus?): String =
-    when (status) {
-        WatchStatus.GetReady -> "Get ready"
-        WatchStatus.LeaveNow -> "Leave now"
-        WatchStatus.FinalCall -> "Final call"
-        WatchStatus.Missed -> "Next chance"
-        null -> "Watching"
+private fun statusHeadline(status: WatchStatus?, departureTimeMinutes: Int? = null): String {
+    val departureText = departureTimeMinutes?.let(::formatMinutesOfDay)
+    return when (status) {
+        WatchStatus.GetReady -> departureText?.let { "Get ready for $it" } ?: "Get ready"
+        WatchStatus.LeaveNow -> departureText?.let { "Leave now for $it" } ?: "Leave now"
+        WatchStatus.FinalCall -> departureText?.let { "Final call for $it" } ?: "Final call"
+        WatchStatus.Missed -> departureText?.let { "Next chance at $it" } ?: "Next chance"
+        null -> departureText?.let { "Watching $it" } ?: "Watching"
     }
+}
