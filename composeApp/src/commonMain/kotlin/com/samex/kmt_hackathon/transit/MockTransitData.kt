@@ -185,64 +185,64 @@ object MockTransitData {
         addDirectionDepartures(
             directionId = "dir_tram_4_zuid",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:00"),
-            lastTerminalDeparture = time("09:30"),
+            firstTerminalDeparture = serviceStart("00"),
+            lastTerminalDeparture = serviceEnd("30"),
             intervalMinutes = 10,
             stopOffsets = listOf(0, 4, 7, 11, 15, 22),
         )
         addDirectionDepartures(
             directionId = "dir_tram_4_centraal",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:04"),
-            lastTerminalDeparture = time("09:34"),
+            firstTerminalDeparture = serviceStart("04"),
+            lastTerminalDeparture = serviceEnd("34"),
             intervalMinutes = 10,
             stopOffsets = listOf(0, 7, 11, 15, 18, 23),
         )
         addDirectionDepartures(
             directionId = "dir_tram_12_amstelstation",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:03"),
-            lastTerminalDeparture = time("09:33"),
+            firstTerminalDeparture = serviceStart("03"),
+            lastTerminalDeparture = serviceEnd("33"),
             intervalMinutes = 12,
             stopOffsets = listOf(0, 6, 15, 18, 23, 31),
         )
         addDirectionDepartures(
             directionId = "dir_tram_12_sloterdijk",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:06"),
-            lastTerminalDeparture = time("09:30"),
+            firstTerminalDeparture = serviceStart("06"),
+            lastTerminalDeparture = serviceEnd("30"),
             intervalMinutes = 12,
             stopOffsets = listOf(0, 8, 13, 16, 25, 31),
         )
         addDirectionDepartures(
             directionId = "dir_metro_52_zuid",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:02"),
-            lastTerminalDeparture = time("09:32"),
+            firstTerminalDeparture = serviceStart("02"),
+            lastTerminalDeparture = serviceEnd("32"),
             intervalMinutes = 6,
             stopOffsets = listOf(0, 7, 10, 13, 15, 20),
         )
         addDirectionDepartures(
             directionId = "dir_metro_52_noord",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:01"),
-            lastTerminalDeparture = time("09:31"),
+            firstTerminalDeparture = serviceStart("01"),
+            lastTerminalDeparture = serviceEnd("31"),
             intervalMinutes = 6,
             stopOffsets = listOf(0, 5, 7, 10, 13, 20),
         )
         addDirectionDepartures(
             directionId = "dir_bus_15_zuid",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:05"),
-            lastTerminalDeparture = time("09:35"),
+            firstTerminalDeparture = serviceStart("05"),
+            lastTerminalDeparture = serviceEnd("35"),
             intervalMinutes = 15,
             stopOffsets = listOf(0, 8, 17, 28),
         )
         addDirectionDepartures(
             directionId = "dir_bus_15_sloterdijk",
             serviceDay = ServiceDay.Weekday,
-            firstTerminalDeparture = time("07:02"),
-            lastTerminalDeparture = time("09:32"),
+            firstTerminalDeparture = serviceStart("02"),
+            lastTerminalDeparture = serviceEnd("32"),
             intervalMinutes = 15,
             stopOffsets = listOf(0, 11, 20, 28),
         )
@@ -337,6 +337,10 @@ object MockTransitData {
         scheduledTimeMinutes: Int,
     ): String = "$directionId-$stopId-${serviceDay.name.lowercase()}-$scheduledTimeMinutes"
 
+    private fun serviceStart(minute: String): Int = time("$SERVICE_START_HOUR:$minute")
+
+    private fun serviceEnd(minute: String): Int = time("$SERVICE_END_HOUR:$minute")
+
     private fun time(value: String): Int {
         val parts = value.split(":")
         require(parts.size == 2) { "Time must use HH:mm format" }
@@ -346,4 +350,7 @@ object MockTransitData {
         require(minutes in 0..59) { "Minute out of range in '$value'" }
         return hours * 60 + minutes
     }
+
+    private const val SERVICE_START_HOUR = "05"
+    private const val SERVICE_END_HOUR = "23"
 }

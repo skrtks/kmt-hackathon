@@ -12,6 +12,7 @@ It is a static, Amsterdam-inspired fixture for early app development. It is not 
 - Lines with ids, short names, modes, and display colors.
 - API-style directions/headsigns per line.
 - Fixed weekday departure times generated from simple terminal schedules and per-stop offsets.
+- Development service spans roughly 05:00-23:30 so smoke tests work outside the morning commute window.
 
 ## Included Lines
 

@@ -58,6 +58,23 @@ class MockTransitDataTest {
         )
     }
 
+    @Test
+    fun departuresForReturnsResultsAfterMorningCommute() {
+        val departures = MockTransitData.departuresFor(
+            stopId = "stop_de_pijp",
+            selections = setOf(
+                LineSelection("line_tram_4", "dir_tram_4_zuid"),
+                LineSelection("line_tram_12", "dir_tram_12_amstelstation"),
+                LineSelection("line_metro_52", "dir_metro_52_zuid"),
+            ),
+            fromTimeMinutes = minutes("12:30"),
+            limit = 6,
+        )
+
+        assertEquals(6, departures.size)
+        assertTrue(departures.all { it.scheduledTimeMinutes >= minutes("12:30") })
+    }
+
     private fun minutes(value: String): Int {
         val parts = value.split(":")
         return parts[0].toInt() * 60 + parts[1].toInt()
