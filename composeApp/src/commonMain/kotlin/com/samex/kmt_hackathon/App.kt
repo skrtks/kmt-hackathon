@@ -1730,16 +1730,6 @@ private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier
         )
 
         SettingsPanel(
-            title = "Theme",
-            subtitle = "Choose a color mood for the app.",
-        ) {
-            ThemePicker(
-                selectedTheme = settings.colorTheme,
-                onThemeSelected = model::updateColorTheme,
-            )
-        }
-
-        SettingsPanel(
             title = "Arrival window",
             subtitle = "The leave window is calculated from how early you want to reach the stop.",
         ) {
@@ -1794,6 +1784,15 @@ private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier
             status = model.notificationStatus,
             onRequestPermission = model::requestNotificationPermission,
         )
+        SettingsPanel(
+            title = "Theme",
+            subtitle = "Choose a color mood for the app.",
+        ) {
+            ThemePicker(
+                selectedTheme = settings.colorTheme,
+                onThemeSelected = model::updateColorTheme,
+            )
+        }
     }
 }
 
