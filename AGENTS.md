@@ -12,7 +12,10 @@ This file provides guidance to coding agents (Claude Code, Cursor, Copilot, etc.
 ./gradlew :composeApp:assembleDebug
 
 # All tests (all targets)
-./gradlew :composeApp:test
+./gradlew :composeApp:allTests
+
+# All tests with a workspace-local Gradle cache
+GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :composeApp:allTests
 
 # Single test class — JVM/Desktop target (primary dev target)
 ./gradlew :composeApp:jvmTest --tests "com.samex.kmt_hackathon.ComposeAppCommonTest"
@@ -40,8 +43,18 @@ Platform entry points all call the shared `App()` composable:
 
 UI uses **Material3** via Compose Multiplatform. Lifecycle/ViewModel from `androidx.lifecycle` works cross-platform via KMP-compatible artifacts.
 
+### Mock Transit Data
+
+Early development uses a static in-memory fixture:
+
+- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/transit/MockTransitData.kt`
+- `composeApp/src/commonTest/kotlin/com/samex/kmt_hackathon/transit/MockTransitDataTest.kt`
+- `docs/mock-transit-data.md`
+
+The mock dataset includes stops, bus/tram/metro lines, API-style directions/headsigns, and fixed weekday departure times. It deliberately includes shared stops and closely aligned departures so leave-window merging behavior can be developed without live transit data.
+
 ## Product Context
 
 Transit leave-window companion app. Core concept: given a transit departure time, walking time, and desired early arrival buffer, compute when the user should leave and notify them. Key domain models to implement: **SavedPlace**, **SavedCommute**, **WatchSession**. Platform-specific adapters needed for notifications, background scheduling, and location — these go in `androidMain`/`iosMain`/`jvmMain` with `expect/actual` interfaces in `commonMain`.
 
-See `product-spec.md` for full MVP scope and timing formula. Treat `product-spec.md` as the only source of truth for product decisions and expected behaviour of the app. When in doubt, always prompt the user with questions and wait for their clarifications.
+See `product-spec.md` for full MVP scope and timing formula. Treat `product-spec.md` as the source of truth for product decisions and expected behaviour of the app. When implementation details are underspecified, prefer conservative choices that match the spec and existing architecture; ask the user only when the ambiguity changes product behavior or creates meaningful implementation risk.
