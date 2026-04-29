@@ -1,6 +1,6 @@
 # App Implementation Plans
 
-Plan version: 1.0.5  
+Plan version: 1.0.6  
 Target app version: MVP plus Wear OS companion MVP  
 Status: First app version implemented; Wear OS foundation in progress  
 Last updated: 2026-04-29
@@ -15,6 +15,7 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `1.0.6` - Added a final-call pulsing red ring on the Wear active-session screen.
 - `1.0.5` - Smoothed the Wear water countdown at the `Leave at` to `Leave now` boundary.
 - `1.0.4` - Added a Wear active-session water-level countdown background for time remaining until final call.
 - `1.0.3` - Added Wear-app-owned Ongoing Activity posting from active snapshot sync.
@@ -155,6 +156,7 @@ Build a Wear OS companion app that shares the transit timing domain model with t
   - Added a Wear Compose Material3 activity that reads the current `/transit-live-activity` Data Layer item and renders active/no-active/phone-unavailable states.
   - Removed placeholder action buttons from the active session screen; the Wear surface is currently read-only.
   - Added a simple blue water-level background that drains downward as the active leave window approaches final call.
+  - Added a pulsing red edge ring during final call.
 - Added Wear Ongoing Activity support:
   - The Wear app requests notification permission when needed.
   - Active snapshots post/update a local ongoing notification with `OngoingActivity` metadata.

@@ -201,6 +201,7 @@ Active watch:
 - Use a black background on watch surfaces.
 - Keep hierarchy shallow: active session, no-active state, and simple commute-start entry points.
 - Active watch uses a flat blue water-level background that drains downward from window open to final call; keep all text high-contrast over it.
+- Final call adds a thin pulsing red edge ring; keep it behind text and avoid other competing alert animations.
 - Keep essential text at 12sp or larger and touch targets at least 48dp.
 - Use short, literal watch copy: `Leave now`, `Final call`, `Leave by <time>`, `No active watch`.
 - Hide watch actions until the corresponding phone command path is wired.

@@ -6,7 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -32,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -160,6 +165,10 @@ private fun WearApp(syncState: WearSyncState, snapshot: LiveActivitySnapshot?) {
                     snapshot = snapshot,
                     modifier = Modifier.fillMaxSize(),
                 )
+                FinalCallPulseRing(
+                    status = snapshot.status,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 WearActiveWatchScreen(
                     snapshot = snapshot,
                     modifier = Modifier.fillMaxSize(),
@@ -209,6 +218,38 @@ private fun WearEmptyState(syncState: WearSyncState, modifier: Modifier = Modifi
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFFCBD5E1),
+        )
+    }
+}
+
+@Composable
+private fun FinalCallPulseRing(status: WatchStatus, modifier: Modifier = Modifier) {
+    if (status != WatchStatus.FinalCall) return
+
+    val pulseTransition = rememberInfiniteTransition(label = "finalCallRingPulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "finalCallRingAlpha",
+    )
+    val ringColor = Color(0xFFF43F5E)
+
+    Canvas(modifier = modifier) {
+        val inset = 5.dp.toPx()
+        val strokeWidth = 4.dp.toPx() + (2.dp.toPx() * pulse)
+        val alpha = 0.55f + (0.35f * pulse)
+        drawOval(
+            color = ringColor.copy(alpha = alpha),
+            topLeft = Offset(x = inset, y = inset),
+            size = Size(
+                width = size.width - (inset * 2f),
+                height = size.height - (inset * 2f),
+            ),
+            style = Stroke(width = strokeWidth),
         )
     }
 }
