@@ -95,8 +95,39 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         let state = makeState(snapshot)
         Task {
             for activity in activities {
-                await activity.update(ActivityContent(state: state, staleDate: nil))
+                let alertConfiguration = makeAlertConfiguration(
+                    previousState: activity.content.state,
+                    nextState: state
+                )
+                await activity.update(
+                    ActivityContent(state: state, staleDate: nil),
+                    alertConfiguration: alertConfiguration
+                )
             }
+        }
+    }
+
+    private func makeAlertConfiguration(
+        previousState: TransitWatchContentState,
+        nextState: TransitWatchContentState
+    ) -> AlertConfiguration? {
+        guard previousState.statusRaw != nextState.statusRaw else { return nil }
+
+        switch nextState.statusRaw {
+        case "LeaveNow":
+            return AlertConfiguration(
+                title: "Leave now",
+                body: "\(nextState.lineLabel) toward \(nextState.directionHeadsign)",
+                sound: .default
+            )
+        case "FinalCall":
+            return AlertConfiguration(
+                title: "Final call",
+                body: "Last chance for \(nextState.lineLabel)",
+                sound: .default
+            )
+        default:
+            return nil
         }
     }
 
