@@ -103,6 +103,15 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Leave"
             packageVersion = "1.0.0"
+            linux {
+                iconFile.set(project.file("src/commonMain/composeResources/drawable/leave_icon.png"))
+            }
+            macOS {
+                iconFile.set(project.file("src/jvmMain/resources/icons/leave.icns"))
+            }
+            windows {
+                iconFile.set(project.file("src/jvmMain/resources/icons/leave.ico"))
+            }
         }
     }
 }
