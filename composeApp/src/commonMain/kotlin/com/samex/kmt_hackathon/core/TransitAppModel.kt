@@ -531,7 +531,7 @@ class TransitAppModel(
         val leavingSnapshot = engine.liveActivitySnapshot(
             commuteId = session.commuteId,
             group = group,
-            status = state.currentStatus ?: engine.statusFor(group, nowMinutes),
+            status = WatchStatus.LeaveNow,
             walkingMinutes = state.walkingTimeMinutes,
         ).copy(isLeaving = true).withCurrentClock()
         notificationScheduler.cancelAll()
@@ -777,10 +777,22 @@ class TransitAppModel(
 
     private fun currentLiveSnapshot(): LiveActivitySnapshot? {
         val session = userData.activeSession ?: return null
-        if (session.silenced || session.leavingAtMinutes != null) return null
         val commute = userData.commutes.firstOrNull { it.id == session.commuteId } ?: return null
         val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return null
         val skipped = session.skippedGroupIds.toSet()
+        if (session.silenced && session.leavingDepartureTimeMinutes != null) {
+            val leavingGroup = session.leavingGroupId?.let { groupId ->
+                activeGroups.firstOrNull { it.id == groupId }
+            } ?: return null
+            val walking = engine.walkingTimeMinutes(origin.location, commute.stopId, userData.settings.walkingSpeed)
+            return engine.liveActivitySnapshot(
+                commuteId = commute.id,
+                group = leavingGroup,
+                status = WatchStatus.LeaveNow,
+                walkingMinutes = walking,
+            ).copy(isLeaving = true)
+        }
+        if (session.silenced || session.leavingAtMinutes != null) return null
         val group = engine.currentGroup(activeGroups, nowMinutes, skipped) ?: return null
         val status = engine.statusFor(group, nowMinutes)
         if (status == WatchStatus.Missed) return null
@@ -859,7 +871,7 @@ class TransitAppModel(
         val snapshot = snapshotOverride ?: lastLiveSnapshot
         if (snapshot == null && !liveActivityController.isActivityRunning()) return
         if (liveActivityController.end(snapshot = snapshot, reason = reason)) {
-            lastLiveSnapshot = null
+            lastLiveSnapshot = if (reason == LiveActivityEndReason.Leaving) snapshot else null
             pendingLiveActivityEndReason = null
         } else {
             pendingLiveActivityEndReason = reason

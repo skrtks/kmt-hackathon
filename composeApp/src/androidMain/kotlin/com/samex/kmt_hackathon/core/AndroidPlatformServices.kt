@@ -388,8 +388,7 @@ internal class AndroidLiveActivityController(
 
     override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean {
         if (reason == LiveActivityEndReason.Leaving && snapshot != null) {
-            post(snapshot.copy(isLeaving = true))
-            return
+            return post(snapshot.copy(isLeaving = true))
         }
         cancelCountdownRefresh()
         NotificationManagerCompat.from(context).cancel(LIVE_ACTIVITY_NOTIFICATION_ID)
@@ -410,7 +409,8 @@ internal class AndroidLiveActivityController(
             .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
             .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
             .apply()
-        scheduleCountdownRefresh(snapshot)if (!canPostNotifications(context)) return false
+        scheduleCountdownRefresh(snapshot)
+        if (!canPostNotifications(context)) return false
         createLiveActivityChannel(context)
         val pendingIntent = launchPendingIntent(context)
         val notificationBuilder = NotificationCompat.Builder(context, LIVE_ACTIVITY_CHANNEL_ID)

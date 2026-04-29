@@ -596,7 +596,7 @@ private class RecordingLiveActivityController(
 
     override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean {
         ends += snapshot to reason
-        if (endSucceeds) {
+        if (endSucceeds && reason != LiveActivityEndReason.Leaving) {
             running = false
         }
         return endSucceeds
