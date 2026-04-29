@@ -80,6 +80,7 @@ import com.samex.kmt_hackathon.core.AppScreen
 import com.samex.kmt_hackathon.core.AppColorTheme
 import com.samex.kmt_hackathon.core.CommuteDraft
 import com.samex.kmt_hackathon.core.CommuteLineSelection
+import com.samex.kmt_hackathon.core.DemoWatchScenario
 import com.samex.kmt_hackathon.core.HapticEffect
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
@@ -1923,6 +1924,10 @@ private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier
                 checked = settings.debugModeEnabled,
                 onCheckedChange = model::setDebugModeEnabled,
             )
+            DemoScenarioControls(
+                enabled = settings.debugModeEnabled && model.userData.commutes.isNotEmpty(),
+                onScenarioSelected = model::startDemoWatch,
+            )
         }
         BottomNavigationScrollSpacer()
     }
@@ -2785,6 +2790,57 @@ private fun SettingSwitchRow(
                     }()
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun DemoScenarioControls(
+    enabled: Boolean,
+    onScenarioSelected: (DemoWatchScenario) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                "Demo state",
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            CompactAware { compact ->
+                ActionButtons(compact) {
+                    OutlinedButton(
+                        onClick = hapticClick { onScenarioSelected(DemoWatchScenario.GetReady) },
+                        enabled = enabled,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Get ready")
+                    }
+                    OutlinedButton(
+                        onClick = hapticClick { onScenarioSelected(DemoWatchScenario.LeaveNow) },
+                        enabled = enabled,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Leave now")
+                    }
+                    Button(
+                        onClick = hapticClick(HapticEffect.Critical) { onScenarioSelected(DemoWatchScenario.FinalCall) },
+                        enabled = enabled,
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
+                        ButtonLabel("Final call")
+                    }
+                }
+            }
         }
     }
 }

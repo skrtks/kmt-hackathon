@@ -165,6 +165,71 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun demoWatchScenariosCreateRealTimeWindows() {
+        listOf(
+            DemoWatchScenario.GetReady to WatchStatus.GetReady,
+            DemoWatchScenario.LeaveNow to WatchStatus.LeaveNow,
+            DemoWatchScenario.FinalCall to WatchStatus.FinalCall,
+        ).forEach { (scenario, expectedStatus) ->
+            val store = FakeModelKeyValueStore()
+            val repository = UserDataRepository(store)
+            val liveActivityController = RecordingLiveActivityController()
+            repository.save(testUserData(activeSession = null))
+            val model = model(
+                repository = repository,
+                now = 8 * 60 + 20,
+                liveActivityController = liveActivityController,
+            )
+
+            model.load()
+            model.startDemoWatch(scenario)
+
+            val state = assertNotNull(model.watchUiState())
+            val group = assertNotNull(state.currentGroup)
+            assertEquals(expectedStatus, state.currentStatus)
+            assertEquals(expectedStatus, liveActivityController.starts.last().status)
+            assertEquals((8 * 60 + 20) * 60, liveActivityController.starts.last().syncedNowSecondsOfDay)
+
+            when (scenario) {
+                DemoWatchScenario.GetReady -> {
+                    assertEquals(8 * 60 + 21, group.windowOpenMinutes)
+                    assertEquals(8 * 60 + 22, group.finalCallMinutes)
+                    assertEquals(8 * 60 + 23, group.primaryWindow.departureTimeMinutes)
+                }
+                DemoWatchScenario.LeaveNow -> {
+                    assertEquals(8 * 60 + 19, group.windowOpenMinutes)
+                    assertEquals(8 * 60 + 21, group.finalCallMinutes)
+                    assertEquals(8 * 60 + 22, group.primaryWindow.departureTimeMinutes)
+                }
+                DemoWatchScenario.FinalCall -> {
+                    assertEquals(8 * 60 + 19, group.windowOpenMinutes)
+                    assertEquals(8 * 60 + 20, group.finalCallMinutes)
+                    assertEquals(8 * 60 + 21, group.primaryWindow.departureTimeMinutes)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun demoWatchResetsDebugClockOffset() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, now = 8 * 60 + 20)
+
+        model.load()
+        model.setDebugModeEnabled(true)
+        model.debugSkipToNextWatchTransition()
+
+        assertEquals((8 * 60 + 26) * 60 - 5, model.nowSecondsOfDay)
+
+        model.startDemoWatch(DemoWatchScenario.LeaveNow)
+
+        assertEquals((8 * 60 + 20) * 60, model.nowSecondsOfDay)
+        assertEquals(WatchStatus.LeaveNow, model.watchUiState()?.currentStatus)
+    }
+
+    @Test
     fun settingsBackReturnsToPreviousScreen() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)

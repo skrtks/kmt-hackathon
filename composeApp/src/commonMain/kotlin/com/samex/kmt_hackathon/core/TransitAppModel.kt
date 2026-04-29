@@ -64,6 +64,12 @@ data class WatchUiState(
     val errorMessage: String?,
 )
 
+enum class DemoWatchScenario {
+    GetReady,
+    LeaveNow,
+    FinalCall,
+}
+
 private const val SECONDS_PER_DAY = MINUTES_PER_DAY * 60
 private const val DEBUG_SKIP_LEAD_SECONDS = 5
 
@@ -425,6 +431,12 @@ class TransitAppModel(
     }
 
     fun startDemoLeavingWindow() {
+        startDemoWatch(DemoWatchScenario.LeaveNow)
+    }
+
+    fun startDemoWatch(scenario: DemoWatchScenario) {
+        debugClockOffsetSeconds = 0
+        forceLiveActivityClockSync = true
         updateClock()
         val commute = userData.activeSession
             ?.let { activeSession -> userData.commutes.firstOrNull { it.id == activeSession.commuteId } }
@@ -443,25 +455,23 @@ class TransitAppModel(
             return
         }
 
-        val windowOpenMinutes = nowMinutes - 1
-        val finalCallMinutes = nowMinutes + 3
-        val departureTimeMinutes = nowMinutes + 5
+        val demoTiming = demoTimingFor(scenario)
         val demoWindow = LeaveWindow(
-            departureId = "demo-${timeProvider.nowSecondsOfDay()}",
+            departureId = "demo-${scenario.name.lowercase()}-$nowSecondsOfDay",
             stopId = commute.stopId,
             lineId = selection.lineId,
             lineShortName = line.shortName,
             directionId = selection.directionId,
             headsign = direction.headsign,
-            departureTimeMinutes = departureTimeMinutes,
-            windowOpenMinutes = windowOpenMinutes,
-            finalCallMinutes = finalCallMinutes,
+            departureTimeMinutes = demoTiming.departureTimeMinutes,
+            windowOpenMinutes = demoTiming.windowOpenMinutes,
+            finalCallMinutes = demoTiming.finalCallMinutes,
         )
         val demoGroup = LeaveWindowGroup(
-            id = "demo-${timeProvider.nowSecondsOfDay()}",
+            id = "demo-${scenario.name.lowercase()}-$nowSecondsOfDay",
             windows = listOf(demoWindow),
-            windowOpenMinutes = windowOpenMinutes,
-            finalCallMinutes = finalCallMinutes,
+            windowOpenMinutes = demoTiming.windowOpenMinutes,
+            finalCallMinutes = demoTiming.finalCallMinutes,
         )
         val session = PersistedWatchSession(
             commuteId = commute.id,
@@ -713,6 +723,31 @@ class TransitAppModel(
 
     private fun secondsBetween(start: Int, end: Int): Int =
         if (end >= start) end - start else (SECONDS_PER_DAY - start) + end
+
+    private data class DemoTiming(
+        val windowOpenMinutes: Int,
+        val finalCallMinutes: Int,
+        val departureTimeMinutes: Int,
+    )
+
+    private fun demoTimingFor(scenario: DemoWatchScenario): DemoTiming =
+        when (scenario) {
+            DemoWatchScenario.GetReady -> DemoTiming(
+                windowOpenMinutes = nowMinutes + 1,
+                finalCallMinutes = nowMinutes + 2,
+                departureTimeMinutes = nowMinutes + 3,
+            )
+            DemoWatchScenario.LeaveNow -> DemoTiming(
+                windowOpenMinutes = nowMinutes - 1,
+                finalCallMinutes = nowMinutes + 1,
+                departureTimeMinutes = nowMinutes + 2,
+            )
+            DemoWatchScenario.FinalCall -> DemoTiming(
+                windowOpenMinutes = nowMinutes - 1,
+                finalCallMinutes = nowMinutes,
+                departureTimeMinutes = nowMinutes + 1,
+            )
+        }
 
     private fun nextDebugTransitionSeconds(): Int? {
         val state = watchUiState() ?: return null
