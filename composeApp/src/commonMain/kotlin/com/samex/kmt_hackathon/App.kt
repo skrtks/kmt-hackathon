@@ -3,13 +3,7 @@ package com.samex.kmt_hackathon
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.TweenSpec
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -68,9 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -82,6 +74,7 @@ import com.samex.kmt_hackathon.core.CommuteDraft
 import com.samex.kmt_hackathon.core.CommuteLineSelection
 import com.samex.kmt_hackathon.core.DemoWatchScenario
 import com.samex.kmt_hackathon.core.HapticEffect
+import com.samex.kmt_hackathon.core.LeaveWindowGroup
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
 import com.samex.kmt_hackathon.core.PlatformServices
@@ -96,8 +89,6 @@ import com.samex.kmt_hackathon.core.formatMinutesOfDay
 import com.samex.kmt_hackathon.transit.LineDirection
 import com.samex.kmt_hackathon.transit.TransitStop
 import kotlinx.coroutines.delay
-import kotlin.math.PI
-import kotlin.math.sin
 
 @Composable
 @Preview
@@ -663,34 +654,33 @@ private fun ActiveWatchHero(
             currentGroup?.let { group ->
                 if (compact) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        WatchMetric("Leave window", "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}")
-                        WatchMetric("Walk", "${state.walkingTimeMinutes} min from ${state.origin.name}")
+                        WatchMetric("Walk", "${state.walkingTimeMinutes} min")
+                        WatchMetric("Departure", formatMinutesOfDay(group.primaryWindow.departureTimeMinutes))
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        WatchMetric(
-                            label = "Leave window",
-                            value = "${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}",
-                            modifier = Modifier.weight(1f),
-                        )
                         WatchMetric(
                             label = "Walk",
                             value = "${state.walkingTimeMinutes} min",
                             modifier = Modifier.weight(1f),
                         )
+                        WatchMetric(
+                            label = "Departure",
+                            value = formatMinutesOfDay(group.primaryWindow.departureTimeMinutes),
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                    Text(
-                        "From ${state.origin.name}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = contentColor.copy(alpha = 0.78f),
+                }
+                val isLeaving = state.silenced && state.leavingDepartureTimeMinutes != null
+                val showWindowCountdown = !isLeaving && status != WatchStatus.FinalCall
+                if (showWindowCountdown) {
+                    LeaveWindowCountdown(
+                        group = group,
+                        nowSecondsOfDay = nowSecondsOfDay,
+                        status = status,
+                        compact = compact,
                     )
                 }
-                LeaveWindowProgress(
-                    windowOpenMinutes = group.windowOpenMinutes,
-                    finalCallMinutes = group.finalCallMinutes,
-                    nowSecondsOfDay = nowSecondsOfDay,
-                    status = status,
-                )
             } ?: Text(
                 "No upcoming departure window.",
                 style = MaterialTheme.typography.bodyLarge,
@@ -730,93 +720,92 @@ private fun WatchMetric(label: String, value: String, modifier: Modifier = Modif
 }
 
 @Composable
-private fun LeaveWindowProgress(
-    windowOpenMinutes: Int,
-    finalCallMinutes: Int,
+private fun LeaveWindowCountdown(
+    group: LeaveWindowGroup,
     nowSecondsOfDay: Int,
     status: WatchStatus?,
+    compact: Boolean,
 ) {
     val statusColors = leaveStatusColors()
-    val targetFillColor = when (status) {
+    val targetAccentColor = when (status) {
+        WatchStatus.GetReady -> statusColors.route
         WatchStatus.FinalCall -> statusColors.finalCall
         WatchStatus.Missed -> MaterialTheme.colorScheme.error
         else -> statusColors.signal
     }
-    val fillColor by animateColorAsState(
-        targetValue = targetFillColor,
+    val accentColor by animateColorAsState(
+        targetValue = targetAccentColor,
         animationSpec = TweenSpec(durationMillis = 300),
-        label = "windowProgressColor",
+        label = "windowCountdownAccent",
     )
-    val progress by animateFloatAsState(
-        targetValue = leaveWindowProgressFraction(windowOpenMinutes, finalCallMinutes, nowSecondsOfDay),
-        animationSpec = TweenSpec(durationMillis = 450),
-        label = "windowProgress",
-    )
-    val waveAnimated = status == WatchStatus.LeaveNow || status == WatchStatus.FinalCall
-    val waveTransition = rememberInfiniteTransition(label = "windowWave")
-    val wavePhase by waveTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (waveAnimated) (2f * PI.toFloat()) else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(
+            width = 1.dp,
+            color = accentColor.copy(alpha = 0.34f),
         ),
-        label = "windowWavePhase",
-    )
-    val trackColor = MaterialTheme.colorScheme.outlineVariant
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = if (compact) 14.dp else 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val centerY = size.height / 2f
-            val strokeWidth = 6.dp.toPx()
-            drawLine(
-                color = trackColor,
-                start = Offset(0f, centerY),
-                end = Offset(size.width, centerY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round,
-            )
-            val progressWidth = (size.width * progress).coerceIn(0f, size.width)
-            if (progressWidth > 0f) {
-                val waveHeight = if (waveAnimated) 3.dp.toPx() else 0f
-                val waveLength = 18.dp.toPx()
-                val path = Path()
-                val steps = 48
-                for (step in 0..steps) {
-                    val x = progressWidth * (step / steps.toFloat())
-                    val y = centerY + sin(((x / waveLength) + wavePhase).toDouble()).toFloat() * waveHeight
-                    if (step == 0) {
-                        path.moveTo(x, y)
-                    } else {
-                        path.lineTo(x, y)
-                    }
-                }
-                drawPath(
-                    path = path,
-                    color = fillColor,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    windowCountdownLabel(status),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    windowCountdownValue(group, status, nowSecondsOfDay),
+                    style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                shape = CircleShape,
+            ) {
+                Text(
+                    "Leave ${formatMinutesOfDay(group.windowOpenMinutes)}  •  Final ${formatMinutesOfDay(group.finalCallMinutes)}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                formatMinutesOfDay(windowOpenMinutes),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                formatMinutesOfDay(finalCallMinutes),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
+}
+
+private fun windowCountdownLabel(status: WatchStatus?): String =
+    when (status) {
+        WatchStatus.GetReady -> "Window opens at"
+        WatchStatus.LeaveNow -> "Window closes in"
+        WatchStatus.FinalCall -> "Window"
+        WatchStatus.Missed -> "Window"
+        null -> "Window"
+    }
+
+private fun windowCountdownValue(
+    group: LeaveWindowGroup,
+    status: WatchStatus?,
+    nowSecondsOfDay: Int,
+): String = when (status) {
+    WatchStatus.GetReady -> formatMinutesOfDay(group.windowOpenMinutes)
+    WatchStatus.LeaveNow -> formatDepartureCountdown(group.finalCallMinutes, nowSecondsOfDay)
+    WatchStatus.FinalCall -> "Window closed"
+    WatchStatus.Missed -> "Closed"
+    null -> "Watching"
 }
 
 @Composable

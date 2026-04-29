@@ -1,6 +1,6 @@
 # Leave Window Design System
 
-Version: 0.3.0
+Version: 0.3.1
 Status: Implemented baseline
 Last updated: 2026-04-29
 
@@ -161,9 +161,9 @@ Implemented motion:
 - Screen transition into/out of Settings uses horizontal slide plus fade.
 - Active watch card animates content size.
 - Watch colors animate between states.
-- Leave-window progress animates as time changes.
+- Leave-window countdown updates as time changes.
 - Progress updates from `nowSecondsOfDay`, so it changes per second.
-- Final-call / leave-now progress can use a subtle wave effect.
+- The phone active card keeps the leave-window detail as a simple countdown panel; avoid generic loading bars for the leave window.
 
 Motion rules:
 
@@ -186,20 +186,23 @@ Current headline copy:
 
 Behavior:
 
-- Shows stop, route chips, timing metrics, progress, and actions.
+- Shows stop, route chips, walking/departure metrics, the window countdown, and actions.
 - After `I'm leaving`, it pins the selected departure/group and counts down to that departure.
+- After `I'm leaving`, the window countdown is hidden because the headline owns the departure countdown.
+- At final call, the window countdown is hidden because the headline owns the urgent state.
 - The watch ends when the selected departure happens.
 - The previous "Notifications silenced after leaving" banner has been removed.
 
-### `LeaveWindowProgress`
+### `LeaveWindowCountdown`
 
-Per-second progress indicator for the current leave window.
+Simple per-second countdown panel for the current leave window.
 
 Rules:
 
-- Shows window-open and final-call endpoints.
-- The fill communicates progress through the window.
-- No dot marker.
+- Show the primary state as `Window closes in <countdown>` while the window is open.
+- Before the window opens, show the window-open time instead of a countdown.
+- Keep secondary timing context to one compact line for leave and final-call times.
+- Final-call and missed states use urgent status color.
 - Must remain legible in all themes.
 
 ### `RouteChip`

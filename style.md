@@ -1,6 +1,6 @@
 # Leave Window Style Guide
 
-Version: 0.2.0
+Version: 0.2.1
 Status: Current implementation guide
 Last updated: 2026-04-29
 
@@ -153,11 +153,11 @@ Allowed:
 - Content-size animation for expanding surfaces.
 - Color transitions for watch state.
 - Per-second progress and countdown updates.
-- Small progress wave in active leave states.
+- Per-second window countdown in active leave states.
 
 Avoid:
 
-- Decorative looping animations outside the progress indicator.
+- Decorative looping animations outside the window countdown.
 - Motion that hides or delays critical actions.
 - Large layout jumps when status changes.
 
