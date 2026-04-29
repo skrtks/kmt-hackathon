@@ -1,8 +1,8 @@
 # App Implementation Plans
 
-Plan version: 1.2.0
+Plan version: 1.3.0
 Target app version: MVP plus Wear OS companion MVP
-Status: First app version implemented; Wear OS foundation in progress; Android/Wear notification/live activity alignment implemented; app naming surfaces renamed to Leave
+Status: First app version implemented; Wear OS foundation in progress; Android/Wear notification/live activity alignment implemented; app naming surfaces renamed to Leave; UI componentization plan drafted
 Last updated: 2026-04-29
 
 ## Versioning
@@ -15,6 +15,7 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `1.3.0` - Added the UI file split and reusable component extraction plan for phone, Wear OS, and watchOS surfaces.
 - `1.2.0` - Added and implemented the app naming cleanup plan so user-facing product surfaces use `Leave`.
 - `1.1.5` - Restored concise `Leave now` ongoing status copy after trying explicit countdown text.
 - `1.1.4` - Added live leave-window countdown copy to the `Leave now` ongoing status text.
@@ -33,6 +34,189 @@ Plan versions use `major.minor.patch`.
 - `0.1.2` - Second-pass review fixes for active-session restore, schedule-end handling, exact window-open notification suppression, and regression coverage.
 - `0.1.1` - Marked the first-pass implementation complete.
 - `0.1.0` - Initial implementation plan for the first full MVP using mock transit data.
+
+## UI File Split And Componentization Plan
+
+Split the full-size Compose app into screen files, reusable UI components, and presentation helpers without changing product behavior. The primary code pressure point is `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/App.kt`, which currently owns app setup, navigation, Home, active-watch UI, place setup, commute setup/edit, settings, reusable layout primitives, field groups, haptic wrappers, and UI formatting helpers.
+
+Reusable extraction should be driven by usage and behavior:
+
+- If a pattern has two or more usages across the phone Compose UI, Wear OS Compose UI, or watchOS SwiftUI surfaces, it is a candidate for a reusable component, helper, or shared presentation contract.
+- UI-free timing, copy, state, and formatting decisions should move toward shared Kotlin domain/presentation helpers when they can serve both phone and Wear OS.
+- Platform-native visual implementations should stay platform-local when the same idea needs different UI technology, such as SwiftUI watchOS views versus Compose Wear views.
+- Extract behavior slices gradually and compile after each slice so the refactor stays reviewable.
+
+### Current Investigation Findings
+
+- `App.kt` is about 2,900 lines and contains more than 60 composables/helpers.
+- Existing reusable primitives already exist inside `App.kt`, including `CompactAware`, `ActionButtons`, `ButtonLabel`, `NavButton`, `Stepper`, `SetupChoice`, `RouteChip`, `RouteChipColumn`, `SettingsPanel`, `SettingStepperRow`, `SettingSwitchRow`, `ErrorCard`, and `EmptyCard`.
+- Repeated visual patterns include flat bordered cards/surfaces, responsive action rows, selected/unselected choices, label/value metric pills, paired text fields, switch rows, stepper rows, schedule/status pills, and route chips.
+- Active-watch copy and timing logic appears in several places:
+  - Phone Compose active watch card in `App.kt`.
+  - Shared Kotlin `ActiveWatchPresentation`.
+  - Wear OS active screen and ongoing notification code.
+  - watchOS `WatchSnapshot` / `WatchContentView`.
+  - iOS ActivityKit widget helpers.
+- `style.md` and `design.md` already define the design rules that extracted components must preserve: flat surfaces, no shadows, no nested cards, role-based colors, compact responsive layouts, route chips as text plus accent, and active-watch copy consistency.
+
+### Target Package Shape
+
+Use `com.samex.kmt_hackathon.ui.*` for new full-size Compose UI files.
+
+Proposed package layout:
+
+- `com.samex.kmt_hackathon.ui.app`
+  - App shell, navigation transition, header, top-level error/replacement surfaces.
+- `com.samex.kmt_hackathon.ui.components`
+  - Cross-screen Compose primitives used at least twice.
+- `com.samex.kmt_hackathon.ui.presentation`
+  - UI-facing formatters and adapters around domain models.
+- `com.samex.kmt_hackathon.ui.home`
+  - Home dashboard, saved commute cards, Home action group.
+- `com.samex.kmt_hackathon.ui.activewatch`
+  - Active watch hero, countdown panel, upcoming-window rows, route chips if they remain active-watch specific.
+- `com.samex.kmt_hackathon.ui.places`
+  - Place editor and saved places list.
+- `com.samex.kmt_hackathon.ui.commute`
+  - Commute setup/edit screens, steps, draft validation/display helpers.
+- `com.samex.kmt_hackathon.ui.settings`
+  - Settings screen, settings panels, theme picker, debug controls.
+
+Wear OS should keep watch-native implementation under `wearApp/src/main/java/com/samex/kmt_hackathon/wear`, but can split into files such as:
+
+- `WearMainActivity.kt` for activity and Data Layer wiring.
+- `WearApp.kt` for top-level Wear UI routing.
+- `WearActiveWatchScreen.kt` for the active glance surface.
+- `WearEmptyState.kt` for no-active-watch states.
+- `WearCountdownVisuals.kt` for water countdown and final-call ring.
+- `WearSnapshotMapping.kt` for DataMap parsing helpers if parsing continues to grow.
+
+watchOS should keep SwiftUI-native files under `iosApp/WatchApp`, but can split into:
+
+- `WatchContentView.swift` for top-level routing.
+- `WatchActiveView.swift` for active-session layout.
+- `WatchEmptyView.swift` for empty/sync states.
+- `WatchCountdownVisuals.swift` for water background and final-call ring.
+- `WatchSnapshotPresentation.swift` for headline/status/countdown helpers if Swift-side duplication remains necessary.
+
+### Reusable Component Candidates
+
+Extract these first because they have clear 2+ usage or already represent repeated patterns:
+
+- `Adaptive.kt`
+  - `CompactAware`
+  - `ActionButtons`
+  - `responsiveButtonModifier`
+  - `BottomNavigationScrollSpacer`
+- `Buttons.kt`
+  - `ButtonLabel`
+  - `NavButton`
+  - `hapticClick`
+  - `hapticResultClick`
+- `Surfaces.kt`
+  - `flatCardElevation`
+  - reusable flat bordered card/panel wrappers
+  - `ErrorCard`
+  - `EmptyCard`
+  - replacement/permission alert surfaces if they remain generic enough.
+- `Pills.kt`
+  - generic label/value metric pill used by settings/watch metrics.
+  - status/schedule pill variants.
+- `Choices.kt`
+  - selected/unselected full-width choice used by origin, stop, line, and weekday controls.
+- `Fields.kt`
+  - paired field row pattern for place coordinates, arrival buffer, and schedule times.
+- `Stepper.kt`
+  - `Stepper`, `StepperMark`, and setting stepper row support.
+- `RouteChip.kt`
+  - `RouteChip`, `RouteChipColumn`, route accent selection.
+- `SettingsRows.kt`
+  - setting switch row, setting stepper row, notification status row.
+
+Do not extract one-off UI just to reduce line count. Keep components close to their feature package until there are at least two real usages or a clear cross-platform presentation reason.
+
+### Shared Presentation Candidates
+
+Move duplicated copy/timing decisions out of screen files before splitting too deeply:
+
+- Active-watch headline and countdown:
+  - Prefer using or extending `shared/src/commonMain/kotlin/com/samex/kmt_hackathon/core/ActiveWatchPresentation.kt`.
+  - Cover `GetReady`, `LeaveNow`, `FinalCall`, `Missed`, and `Leaving`.
+  - Include timer target and whether final-call/window countdown UI should be shown.
+- Leave-window progress:
+  - Share a Kotlin helper for phone and Wear OS where possible.
+  - Keep Swift implementation mirrored unless a shared/generated bridge is introduced later.
+- Route and commute display:
+  - Move `commuteOriginName`, `commuteRouteLabels`, `groupRouteLabels`, `lineDirectionLabel`, and draft summary helpers into `ui.presentation`.
+  - Keep helpers UI-facing if they depend on `TransitAppModel`; move to shared domain only when they become model-independent.
+- Time formatting:
+  - Reuse `formatMinutesOfDay` and `formatCountdownToMinutesOfDay` where possible.
+  - Avoid adding new local countdown formatters unless a platform-native API requires it.
+
+### Implementation Plan
+
+1. Prepare package structure.
+   - Create `ui/app`, `ui/components`, `ui/presentation`, `ui/home`, `ui/activewatch`, `ui/places`, `ui/commute`, and `ui/settings`.
+   - Keep `App()` public in the root package so platform entry points do not change.
+2. Extract foundation components.
+   - Move adaptive layout, button labels, haptic wrappers, flat card elevation, basic alert cards, and scroll spacer first.
+   - Compile after this step to catch visibility/import mistakes early.
+3. Extract route and active-watch presentation helpers.
+   - Move route chip UI and active-watch UI text/progress helpers.
+   - Reconcile duplicate phone/Wear Kotlin helpers with `ActiveWatchPresentation` where possible.
+   - Add focused tests if shared helper behavior changes.
+4. Extract active-watch UI.
+   - Move `ActiveWatchSection`, `ActiveWatchHero`, `LeaveWindowCountdown`, `WatchMetric`, and `UpcomingWindowRow`.
+   - Preserve current Home behavior: active watch remains on Home, no separate Watch route.
+5. Extract Home and Places.
+   - Move `HomeScreen`, `HomeManagementActions`, `CommuteSummaryCard`, `CommuteCardActions`, `PlacesScreen`, `PlaceEditor`, and place summary/field helpers.
+   - Keep saved commute behavior and notification permission warning unchanged.
+6. Extract commute setup/edit.
+   - Move setup step enum, step screens, edit sections, draft validation, and draft summaries.
+   - Preserve single line/direction behavior and copy from `style.md`.
+   - Consider a reusable `ExpandableEditSection` only because edit sections use the same pattern repeatedly.
+7. Extract settings.
+   - Move settings overview, panels, rows, notification panel, theme picker, and debug controls.
+   - Keep theme picker last in Settings.
+8. Split Wear OS files.
+   - Separate activity/Data Layer wiring from Wear UI.
+   - Reuse shared Kotlin active-watch presentation helper for Wear headline/status where practical.
+   - Keep Wear Material3, black background, water countdown, and final-call ring local to `:wearApp`.
+9. Split watchOS SwiftUI files.
+   - Separate top-level routing, active view, empty view, visuals, and snapshot presentation.
+   - Mirror shared presentation semantics but keep SwiftUI visuals native.
+10. Clean up and verify.
+   - Remove dead helpers from old files after each migration.
+   - Run targeted searches for duplicate helpers and stale imports.
+   - Compile phone/common/Wear targets after the main slices.
+
+### Acceptance Criteria
+
+- Root `App.kt` is reduced to app construction, ticking, top-level theme, shell, header, and screen routing.
+- Full-size Compose screens live in feature packages under `com.samex.kmt_hackathon.ui.*`.
+- Reusable components are extracted when they have at least two usages across phone, Wear OS, or watchOS equivalents.
+- Extracted components preserve the documented flat style: no shadows, no nested cards, no decorative gradients/orbs, role-based colors, compact-safe text.
+- Active-watch headline/copy semantics stay consistent across phone, Android ongoing/Wear surfaces, and watchOS:
+  - `Leave at <time>`
+  - `Leave now`
+  - `Final call`
+  - `Departure in <countdown>`
+- Commute setup/edit still enforce exactly one selected line/direction.
+- Home remains the active-watch dashboard; no new Watch route is introduced.
+- Settings remains a page with a back button and theme picker last.
+- Wear OS remains watch-native and does not reuse mobile Material3 UI.
+- watchOS remains SwiftUI-native and mirrors shared state semantics.
+- Targeted builds pass after implementation:
+  - `GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :composeApp:compileKotlinJvm :composeApp:compileDebugKotlinAndroid :composeApp:compileKotlinIosSimulatorArm64`
+  - `GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :wearApp:assembleDebug`
+  - watchOS/iOS build via Xcode when Swift files are split.
+
+### Open Decisions
+
+- Whether to create generic flat card/panel wrappers now, or keep style helpers smaller until a third panel/card family appears.
+- Whether Swift watchOS presentation should keep mirrored helpers or receive richer preformatted payload fields from the phone.
+- Whether iOS ActivityKit widget presentation should be included in this refactor pass or handled in the existing notification/live-activity alignment plan.
+- Whether tests should be added before or after the active presentation helper consolidation.
 
 ## App Naming Cleanup Plan
 
