@@ -1,6 +1,6 @@
 # App Implementation Plans
 
-Plan version: 1.0.2  
+Plan version: 1.0.3  
 Target app version: MVP plus Wear OS companion MVP  
 Status: First app version implemented; Wear OS foundation in progress  
 Last updated: 2026-04-29
@@ -15,6 +15,7 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `1.0.3` - Added Wear-app-owned Ongoing Activity posting from active snapshot sync.
 - `1.0.2` - Removed placeholder Wear action buttons; current Wear active session screen is read-only until command sync is implemented.
 - `1.0.1` - Recorded the initial Wear OS foundation work: shared KMP module, separate Wear app module, manifest split, and active-snapshot Data Layer reading.
 - `1.0.0` - Added the Wear OS companion MVP port plan based on Android Wear OS packaging, Compose, Data Layer, Ongoing Activity, Tile, and quality guidance.
@@ -151,10 +152,14 @@ Build a Wear OS companion app that shares the transit timing domain model with t
   - Removed the invalid phone-manifest watch feature declaration.
   - Added a Wear Compose Material3 activity that reads the current `/transit-live-activity` Data Layer item and renders active/no-active/phone-unavailable states.
   - Removed placeholder action buttons from the active session screen; the Wear surface is currently read-only.
+- Added Wear Ongoing Activity support:
+  - The Wear app requests notification permission when needed.
+  - Active snapshots post/update a local ongoing notification with `OngoingActivity` metadata.
+  - A Wear-side Data Layer listener service keeps the Ongoing Activity in sync even when the Wear app UI is not open.
+  - Inactive, deleted, or unavailable snapshots cancel the Wear ongoing notification.
 - Not yet implemented:
   - Watch-to-phone command messages.
   - Saved-commute summary sync.
-  - Wear Ongoing Activity posting from `:wearApp`.
   - Tile service.
 
 ### Acceptance Criteria

@@ -1,8 +1,10 @@
 package com.samex.kmt_hackathon.wear
 
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,11 +41,21 @@ import com.samex.kmt_hackathon.core.WatchStatus
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
 
 class WearMainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                activeSnapshot?.let { postWearOngoingActivity(this, it) }
+            }
+        }
+
     private var activeSnapshot by mutableStateOf<LiveActivitySnapshot?>(null)
     private var syncState by mutableStateOf(WearSyncState.Loading)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (shouldRequestWearOngoingActivityPermission(this)) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         setContent {
             WearApp(syncState = syncState, snapshot = activeSnapshot)
@@ -95,6 +107,7 @@ class WearMainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 runOnUiThread {
                     activeSnapshot = null
                     syncState = WearSyncState.PhoneUnavailable
+                    cancelWearOngoingActivity(this@WearMainActivity)
                 }
             }
     }
@@ -102,12 +115,14 @@ class WearMainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private fun applyDataMap(dataMap: DataMap) {
         val snapshot = dataMap.toLiveActivitySnapshot()
         runOnUiThread {
-            if (!dataMap.getBoolean(KEY_WEAR_ACTIVE, false) || snapshot == null) {
+            if (!dataMap.isWearLiveActivityActive() || snapshot == null) {
                 activeSnapshot = null
                 syncState = WearSyncState.NoActiveWatch
+                cancelWearOngoingActivity(this@WearMainActivity)
             } else {
                 activeSnapshot = snapshot
                 syncState = WearSyncState.Active
+                postWearOngoingActivity(this@WearMainActivity, snapshot)
             }
         }
     }
@@ -116,6 +131,7 @@ class WearMainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         runOnUiThread {
             activeSnapshot = null
             syncState = WearSyncState.NoActiveWatch
+            cancelWearOngoingActivity(this@WearMainActivity)
         }
     }
 }
@@ -263,7 +279,7 @@ private enum class WearSyncState {
     Active,
 }
 
-private const val WEAR_LIVE_ACTIVITY_PATH = "/transit-live-activity"
+internal const val WEAR_LIVE_ACTIVITY_PATH = "/transit-live-activity"
 private const val KEY_WEAR_ACTIVE = "active"
 private const val KEY_WEAR_COMMUTE_ID = "commute_id"
 private const val KEY_WEAR_GROUP_ID = "group_id"
@@ -278,7 +294,10 @@ private const val KEY_WEAR_WINDOW_OPEN_MINUTES = "window_open_minutes"
 private const val KEY_WEAR_FINAL_CALL_MINUTES = "final_call_minutes"
 private const val KEY_WEAR_WALKING_MINUTES = "walking_minutes"
 
-private fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
+internal fun DataMap.isWearLiveActivityActive(): Boolean =
+    getBoolean(KEY_WEAR_ACTIVE, false)
+
+internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
     val status = getString(KEY_WEAR_STATUS)?.let { value ->
         runCatching { WatchStatus.valueOf(value) }.getOrNull()
     } ?: return null
