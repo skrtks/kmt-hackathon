@@ -1,8 +1,8 @@
 # App Implementation Plans
 
-Plan version: 1.1.5
+Plan version: 1.2.0
 Target app version: MVP plus Wear OS companion MVP
-Status: First app version implemented; Wear OS foundation in progress; Android and Wear notification/live activity alignment implemented
+Status: First app version implemented; Wear OS foundation in progress; Android/Wear notification/live activity alignment implemented; app naming surfaces renamed to Leave
 Last updated: 2026-04-29
 
 ## Versioning
@@ -15,6 +15,7 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `1.2.0` - Added and implemented the app naming cleanup plan so user-facing product surfaces use `Leave`.
 - `1.1.5` - Restored concise `Leave now` ongoing status copy after trying explicit countdown text.
 - `1.1.4` - Added live leave-window countdown copy to the `Leave now` ongoing status text.
 - `1.1.3` - Adjusted the Wear Ongoing Activity Recents entry so route title and status text are not duplicated.
@@ -32,6 +33,36 @@ Plan versions use `major.minor.patch`.
 - `0.1.2` - Second-pass review fixes for active-session restore, schedule-end handling, exact window-open notification suppression, and regression coverage.
 - `0.1.1` - Marked the first-pass implementation complete.
 - `0.1.0` - Initial implementation plan for the first full MVP using mock transit data.
+
+## App Naming Cleanup Plan
+
+Rename the app to `Leave` everywhere a user, installer, launcher, or product document would see the app name. Keep technical identities stable unless a separate migration is planned, including package names, bundle identifiers, Gradle module names, source-set paths, and transit/live-activity type names.
+
+### Current Investigation Findings
+
+- Android phone and Wear launchers read `@string/app_name`; both needed to resolve to `Leave`.
+- The desktop app window title still used `kmt_hackathon`, and the desktop native distribution name was tied to the same old identifier.
+- The Compose app header used the prior two-word product name.
+- The watch companion empty/error copy told users to open the prior product name on the phone/iPhone.
+- iOS/watchOS display-name settings used older component names, while the iOS product name still inherited `kmt_hackathon`.
+- `design.md` and `style.md` still read as prior-name product documents, and `design.md` still carried the old open question about whether to keep that name.
+
+### Implementation Plan
+
+1. Update launcher, desktop, iOS, watchOS, and extension display names to `Leave`.
+2. Update in-app and companion-app product copy to `Leave`.
+3. Update product-facing documentation titles and close the obsolete product-name question.
+4. Re-run a naming search for stale display-name strings, app-name keys, and iOS display-name keys, then run a targeted Gradle check.
+
+### Acceptance Criteria
+
+- Android phone launcher label is `Leave`.
+- Wear launcher label is `Leave`.
+- Desktop window title and native distribution app name are `Leave`.
+- iOS app, watchOS app, and Live Activity extension display names resolve to `Leave`.
+- The main app header says `Leave`.
+- Companion empty/error copy says `Open Leave...`.
+- Remaining `kmt_hackathon`, `TransitLiveActivity`, and `LeaveWindow` references are technical identifiers or domain terminology rather than app-name copy.
 
 ## Notification And Live Activity Alignment Plan
 

@@ -101,7 +101,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.samex.kmt_hackathon"
+            packageName = "Leave"
             packageVersion = "1.0.0"
         }
     }

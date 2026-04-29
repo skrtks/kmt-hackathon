@@ -1,4 +1,4 @@
-# Leave Window Design System
+# Leave Design System
 
 Version: 0.3.1
 Status: Implemented baseline
@@ -293,7 +293,7 @@ Responsive rules:
 
 ## Open Design Questions
 
-- Should the product name become `HopOn`, or should the UI remain `Leave Window` for now?
+- Product name is `Leave`; revisit only if a future rename is planned.
 - Should Android dynamic color be introduced later, or should the fixed four-theme picker remain the main personalization model?
 - Should the active watch card become more compact on very short screens?
 - Should schedule/auto-start be visually separated more strongly from manual commutes?

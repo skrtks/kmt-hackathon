@@ -202,7 +202,7 @@ private fun WearEmptyState(syncState: WearSyncState, modifier: Modifier = Modifi
     val detail = when (syncState) {
         WearSyncState.Loading -> "Checking phone state"
         WearSyncState.NoActiveWatch -> "Start a commute on your phone"
-        WearSyncState.PhoneUnavailable -> "Open Leave Window on your phone"
+        WearSyncState.PhoneUnavailable -> "Open Leave on your phone"
         WearSyncState.Active -> "Start a commute on your phone"
     }
 

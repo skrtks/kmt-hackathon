@@ -1,4 +1,4 @@
-# Leave Window Style Guide
+# Leave Style Guide
 
 Version: 0.2.1
 Status: Current implementation guide

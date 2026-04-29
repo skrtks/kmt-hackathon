@@ -53,7 +53,7 @@ private struct EmptyWatchView: View {
         case .noActiveWatch:
             return ("No active watch", "Start a commute on your iPhone")
         case .phoneUnavailable:
-            return ("Phone unavailable", "Open Leave Window on your iPhone")
+            return ("Phone unavailable", "Open Leave on your iPhone")
         case .active:
             return ("No active watch", "Start a commute on your iPhone")
         }

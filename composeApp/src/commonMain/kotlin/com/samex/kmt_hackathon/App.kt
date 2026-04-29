@@ -301,7 +301,7 @@ private fun AnimatedScreenContent(model: TransitAppModel, modifier: Modifier = M
 private fun HeaderTitle(model: TransitAppModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "Leave Window",
+            "Leave",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
