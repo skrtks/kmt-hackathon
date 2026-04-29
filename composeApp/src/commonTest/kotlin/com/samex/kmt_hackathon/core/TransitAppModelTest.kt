@@ -108,6 +108,23 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun selectingLineDirectionReplacesPreviousSelection() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60)
+        val firstDirection = LineDirection("direction-1", "line-1", "Central", listOf("stop"))
+        val secondDirection = LineDirection("direction-2", "line-2", "South", listOf("stop"))
+
+        model.load()
+        model.beginCommuteSetup()
+        model.selectLineDirection(firstDirection)
+        model.selectLineDirection(secondDirection)
+
+        assertEquals(setOf(CommuteLineSelection("line-2", "direction-2")), model.commuteDraft.selections)
+    }
+
+    @Test
     fun editingCommuteUpdatesSavedCommuteInPlace() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)

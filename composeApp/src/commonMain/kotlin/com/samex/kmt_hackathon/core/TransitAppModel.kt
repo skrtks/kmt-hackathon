@@ -42,6 +42,13 @@ data class CommuteDraft(
     val scheduleEnd: String = "09:00",
 )
 
+private fun CommuteDraft.withSingleSelection(): CommuteDraft =
+    if (selections.size <= 1) {
+        this
+    } else {
+        copy(selections = selections.take(1).toSet())
+    }
+
 data class WatchUiState(
     val commute: SavedCommute,
     val origin: SavedPlace,
@@ -215,7 +222,7 @@ class TransitAppModel(
             editingCommuteId = commute.id,
             stopId = commute.stopId,
             originPlaceId = commute.originPlaceId,
-            selections = commute.selections.toSet(),
+            selections = commute.selections.take(1).toSet(),
             minEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).minEarlyMinutes.toString(),
             maxEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).maxEarlyMinutes.toString(),
             overrideArrivalBuffer = commute.arrivalBufferOverride != null,
@@ -229,20 +236,16 @@ class TransitAppModel(
     }
 
     fun updateCommuteDraft(draft: CommuteDraft) {
-        commuteDraft = draft
+        commuteDraft = draft.withSingleSelection()
     }
 
     fun selectStop(stopId: String) {
         commuteDraft = commuteDraft.copy(stopId = stopId, selections = emptySet())
     }
 
-    fun toggleSelection(direction: LineDirection) {
+    fun selectLineDirection(direction: LineDirection) {
         val selection = CommuteLineSelection(direction.lineId, direction.id)
-        commuteDraft = if (selection in commuteDraft.selections) {
-            commuteDraft.copy(selections = commuteDraft.selections - selection)
-        } else {
-            commuteDraft.copy(selections = commuteDraft.selections + selection)
-        }
+        commuteDraft = commuteDraft.copy(selections = setOf(selection))
     }
 
     fun saveCommute() {
@@ -251,8 +254,8 @@ class TransitAppModel(
             errorMessage = "Choose an origin place."
             return
         }
-        if (commuteDraft.selections.isEmpty()) {
-            errorMessage = "Select at least one line and direction."
+        if (commuteDraft.selections.size != 1) {
+            errorMessage = "Select one line and direction."
             return
         }
 
@@ -297,7 +300,7 @@ class TransitAppModel(
             id = existingCommute?.id ?: newId("commute"),
             originPlaceId = originId,
             stopId = commuteDraft.stopId,
-            selections = commuteDraft.selections.sortedWith(compareBy<CommuteLineSelection> { it.lineId }.thenBy { it.directionId }),
+            selections = commuteDraft.selections.toList(),
             arrivalBufferOverride = arrivalBuffer,
             schedule = schedule,
             autoStartEnabled = autoStartEnabled,

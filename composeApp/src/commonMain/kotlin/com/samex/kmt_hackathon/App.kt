@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import com.samex.kmt_hackathon.core.AppScreen
 import com.samex.kmt_hackathon.core.AppColorTheme
 import com.samex.kmt_hackathon.core.CommuteDraft
+import com.samex.kmt_hackathon.core.CommuteLineSelection
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
 import com.samex.kmt_hackathon.core.PlatformServices
@@ -1058,7 +1059,7 @@ private fun CommuteEditScreen(model: TransitAppModel) {
             }
 
             CommuteEditSectionCard(
-                title = "Lines",
+                title = "Line",
                 value = linesSummary(model, draft),
                 expanded = openSection == CommuteEditSection.Lines,
                 onToggle = {
@@ -1222,7 +1223,7 @@ private fun CommuteEditSectionText(title: String, value: String, modifier: Modif
 private enum class CommuteSetupStep(val title: String) {
     Origin("Origin"),
     Stop("Stop"),
-    Lines("Lines"),
+    Lines("Line"),
     Timing("Timing"),
     Review("Review"),
 }
@@ -1233,7 +1234,7 @@ private fun CommuteSetupSnapshot(model: TransitAppModel, draft: CommuteDraft) {
         Text("From ${originName(model, draft)}", style = MaterialTheme.typography.bodyMedium)
         Text("Stop ${stopName(model, draft)}", style = MaterialTheme.typography.bodyMedium)
         Text(
-            "Lines ${linesSummary(model, draft)}",
+            "Line ${linesSummary(model, draft)}",
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -1331,16 +1332,19 @@ private fun LinesStep(model: TransitAppModel, draft: CommuteDraft, compact: Bool
             Text("No lines for this stop.", style = MaterialTheme.typography.bodyMedium)
         } else {
             visibleDirections.forEach { direction ->
-                val selected = draft.selections.any { it.directionId == direction.id }
+                val selection = CommuteLineSelection(direction.lineId, direction.id)
+                val selected = selection in draft.selections
                 SetupChoice(
                     label = lineDirectionLabel(model, direction),
                     selected = selected,
-                    onClick = { model.toggleSelection(direction) },
+                    onClick = { model.selectLineDirection(direction) },
                 )
             }
         }
         Text(
-            "${draft.selections.size} selected",
+            draft.selections.firstOrNull()?.let { selection ->
+                "Selected ${model.lineShortName(selection.lineId)} to ${model.directionHeadsign(selection.directionId)}"
+            } ?: "Choose one line and direction",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -1433,7 +1437,7 @@ private fun ReviewStep(model: TransitAppModel, draft: CommuteDraft) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ReviewLine("Origin", originName(model, draft))
         ReviewLine("Stop", stopName(model, draft))
-        ReviewLine("Lines", linesSummary(model, draft))
+        ReviewLine("Line", linesSummary(model, draft))
         ReviewLine("Arrival", arrivalBufferSummary(model, draft))
         ReviewLine("Schedule", scheduleSummary(draft))
     }
@@ -1545,7 +1549,7 @@ private fun canContinueSetupStep(step: CommuteSetupStep, draft: CommuteDraft): B
     when (step) {
         CommuteSetupStep.Origin -> draft.originPlaceId.isNotBlank()
         CommuteSetupStep.Stop -> draft.stopId.isNotBlank()
-        CommuteSetupStep.Lines -> draft.selections.isNotEmpty()
+        CommuteSetupStep.Lines -> draft.selections.size == 1
         CommuteSetupStep.Timing -> isTimingDraftValid(draft)
         CommuteSetupStep.Review -> canSaveCommuteDraft(draft)
     }
@@ -1553,7 +1557,7 @@ private fun canContinueSetupStep(step: CommuteSetupStep, draft: CommuteDraft): B
 private fun canSaveCommuteDraft(draft: CommuteDraft): Boolean =
     draft.originPlaceId.isNotBlank() &&
             draft.stopId.isNotBlank() &&
-            draft.selections.isNotEmpty() &&
+            draft.selections.size == 1 &&
             isTimingDraftValid(draft)
 
 private fun isTimingDraftValid(draft: CommuteDraft): Boolean {
