@@ -1,6 +1,9 @@
 package com.samex.kmt_hackathon.wear
 
 import android.Manifest
+import android.graphics.BlurMaskFilter
+import android.graphics.Paint as AndroidPaint
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
@@ -38,6 +41,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -243,6 +249,19 @@ private fun FinalCallPulseRing(status: WatchStatus, modifier: Modifier = Modifie
         val inset = 5.dp.toPx()
         val strokeWidth = 4.dp.toPx() + (2.dp.toPx() * pulse)
         val alpha = 0.55f + (0.35f * pulse)
+        val glowInset = inset + strokeWidth + 6.dp.toPx()
+        val glowRect = RectF(glowInset, glowInset, size.width - glowInset, size.height - glowInset)
+        if (glowRect.width() > 0f && glowRect.height() > 0f) {
+            val glowPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                style = AndroidPaint.Style.STROKE
+                color = ringColor.copy(alpha = 0.28f + (0.12f * pulse)).toArgb()
+                this.strokeWidth = 24.dp.toPx() + (6.dp.toPx() * pulse)
+                maskFilter = BlurMaskFilter(16.dp.toPx(), BlurMaskFilter.Blur.NORMAL)
+            }
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.drawOval(glowRect, glowPaint)
+            }
+        }
         drawOval(
             color = ringColor.copy(alpha = alpha),
             topLeft = Offset(x = inset, y = inset),
