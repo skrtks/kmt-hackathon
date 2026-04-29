@@ -22,7 +22,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         rehydrateActivity() != nil
     }
 
-    func start(snapshot: LiveActivitySnapshot) {
+    func start(snapshot: SharedLiveActivitySnapshot) {
         guard isSupported() else { return }
         let matchingActivities = activeActivities(matchingCommuteId: snapshot.commuteId)
         if !matchingActivities.isEmpty {
@@ -48,7 +48,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         }
     }
 
-    func update(snapshot: LiveActivitySnapshot) {
+    func update(snapshot: SharedLiveActivitySnapshot) {
         let matchingActivities = activeActivities(matchingCommuteId: snapshot.commuteId)
         guard !matchingActivities.isEmpty else {
             start(snapshot: snapshot)
@@ -58,7 +58,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         updateActivities(matchingActivities, with: snapshot)
     }
 
-    func end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+    func end(snapshot: SharedLiveActivitySnapshot?, reason: SharedLiveActivityEndReason) {
         let activities = snapshot
             .map { activeActivities(matchingCommuteId: $0.commuteId) }
             ?? activeActivities()
@@ -91,7 +91,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         return currentActivity
     }
 
-    private func updateActivities(_ activities: [Activity<TransitWatchAttributes>], with snapshot: LiveActivitySnapshot) {
+    private func updateActivities(_ activities: [Activity<TransitWatchAttributes>], with snapshot: SharedLiveActivitySnapshot) {
         let state = makeState(snapshot)
         Task {
             for activity in activities {
@@ -133,7 +133,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
 
     private func endActivities(
         _ activities: [Activity<TransitWatchAttributes>],
-        snapshot: LiveActivitySnapshot?,
+        snapshot: SharedLiveActivitySnapshot?,
         dismissalPolicy: ActivityUIDismissalPolicy
     ) {
         let finalState = snapshot.map(makeState)
@@ -147,7 +147,7 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         }
     }
 
-    private func makeState(_ snapshot: LiveActivitySnapshot) -> TransitWatchContentState {
+    private func makeState(_ snapshot: SharedLiveActivitySnapshot) -> TransitWatchContentState {
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let nowOffsetSeconds = Date().timeIntervalSince(startOfToday)
