@@ -30,6 +30,12 @@ GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :composeApp:allTests
 ./gradlew :composeApp:testDebugUnitTest --tests "com.samex.kmt_hackathon.ComposeAppCommonTest"
 
 # iOS — open iosApp/iosApp.xcodeproj in Xcode and run from there
+
+# iOS app + embedded watchOS companion build
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+
+# watchOS companion target build
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme WatchApp -configuration Debug -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
 No lint tooling configured (no Detekt/Ktlint). Kotlin official code style enforced via `kotlin.code.style=official` in `gradle.properties`.
@@ -52,6 +58,7 @@ Platform entry points all call the shared `App()` composable:
 - Desktop: `main.kt` → `Window { App() }`
 - iOS: `MainViewController.kt` → `ComposeUIViewController { App() }`
 - Wear OS: `WearMainActivity` → `setContent { WearApp(...) }`
+- watchOS: `WatchApp` → native SwiftUI `WatchContentView`
 
 The full-size app UI uses **Material3** via Compose Multiplatform. The Wear OS app uses **Wear Compose Material3** and must stay watch-native rather than reusing the full-size `App()` UI.
 
@@ -96,15 +103,18 @@ Current first-version app architecture:
 - Keep the phone app as the source of truth for saved commutes, active sessions, notification scheduling, and transit refresh until a standalone watch product scope is explicitly planned.
 - Wear UI should use black background, Wear Material3 components, `TimeText`, 48dp touch targets, and shallow vertical flows.
 
-### Live Activity (iOS / watchOS Smart Stack)
+### iOS Live Activity and watchOS
 
 - `core/PlatformServices.kt` exposes `LiveActivityController` (with `NoopLiveActivityController` for Android/JVM) and `LiveActivitySnapshot` / `LiveActivityEndReason` domain types.
 - `TransitAppModel` calls `start` / `update` / `end` on the controller as the active watch session changes (manual start, auto-start, status transitions, skip, "I'm leaving," schedule end, session restore on launch).
 - iOS implementation: `iosMain/.../IosLiveActivityController.kt` holds a Swift-registered `LiveActivityBridge`. The Swift side lives in `iosApp/`:
   - `iosApp/iosApp/TransitLiveActivityBridge.swift` adopts `LiveActivityBridge`, drives `ActivityKit`, and is registered from `iOSApp.swift` at launch.
-  - `iosApp/TransitLiveActivity/` is a separate Widget Extension target containing `TransitWatchAttributes.swift`, `TransitLiveActivityWidget.swift`, and the extension `Info.plist`. **Manual Xcode step:** add this folder to `iosApp.xcodeproj` as a "Widget Extension" target and add it as an embedded content to the iOS app target. The Kotlin-side framework (`ComposeApp`) does not need to depend on the widget extension.
+  - `iosApp/TransitLiveActivity/` is a Widget Extension target containing `TransitWatchAttributes.swift`, `TransitLiveActivityWidget.swift`, and the extension `Info.plist`. The Kotlin-side framework (`ComposeApp`) does not depend on the widget extension.
+  - `iosApp/iosApp/WatchConnectivitySnapshotBridge.swift` publishes active `LiveActivitySnapshot` updates to the embedded watchOS app via `WatchConnectivity`.
   - The iOS app `Info.plist` enables `NSSupportsLiveActivities` and `NSSupportsLiveActivitiesFrequentUpdates`.
-- watchOS surface is iOS Live Activity mirroring via Smart Stack (watchOS 10+); there is no standalone watchOS app target.
+- `iosApp/WatchApp/` is an embedded native SwiftUI watchOS companion target. It is read-only, uses the phone-published active snapshot as source of truth, mirrors the Wear active-session water countdown and final-call ring, and keeps showing the departure countdown after `I'm leaving`.
+- watchOS haptics live in `WatchSessionModel.swift` and map the shared haptic vocabulary to WatchKit haptics: click-style ticks for selection/progress, success for confirmation, notification/direction-up for stronger progress, and failure for final-call/error states.
+- The paired Apple Watch can still receive the iOS Live Activity in Smart Stack; the native watchOS app is the interactive app surface.
 - `Text(timerInterval:)` drives the countdown; `WatchStopped` end reason uses a 2-minute lingering dismissal, others dismiss immediately.
 
 ### Mock Transit Data

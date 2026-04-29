@@ -16,15 +16,16 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
     }
 
     func isSupported() -> Bool {
-        ActivityAuthorizationInfo().areActivitiesEnabled
+        areLiveActivitiesEnabled || WatchConnectivitySnapshotBridge.shared.isSupported
     }
 
     func isActivityRunning() -> Bool {
-        rehydrateActivity() != nil
+        rehydrateActivity() != nil || WatchConnectivitySnapshotBridge.shared.hasActiveSnapshot
     }
 
     func start(snapshot: SharedLiveActivitySnapshot) -> Bool {
-        guard isSupported() else { return false }
+        let watchSynced = WatchConnectivitySnapshotBridge.shared.publish(snapshot: snapshot)
+        guard areLiveActivitiesEnabled else { return watchSynced }
 
         let matchingActivities = activeActivities(matchingCommuteId: snapshot.commuteId)
         if !matchingActivities.isEmpty {
@@ -48,14 +49,15 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
                 guard self.desiredStateByCommuteId[snapshot.commuteId] == state else { return }
                 _ = self.requestActivity(snapshot)
             }
-            return false
+            return watchSynced
         }
 
         return requestActivity(snapshot)
     }
 
     func update(snapshot: SharedLiveActivitySnapshot) -> Bool {
-        guard isSupported() else { return false }
+        let watchSynced = WatchConnectivitySnapshotBridge.shared.publish(snapshot: snapshot)
+        guard areLiveActivitiesEnabled else { return watchSynced }
 
         let matchingActivities = activeActivities(matchingCommuteId: snapshot.commuteId)
         guard !matchingActivities.isEmpty else {
@@ -67,6 +69,12 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
     }
 
     func end(snapshot: SharedLiveActivitySnapshot?, reason: SharedLiveActivityEndReason) -> Bool {
+        if reason == .leaving, let snapshot {
+            WatchConnectivitySnapshotBridge.shared.publish(snapshot: snapshot)
+        } else {
+            WatchConnectivitySnapshotBridge.shared.clear(snapshot: snapshot)
+        }
+
         let activities = snapshot
             .map { activeActivities(matchingCommuteId: $0.commuteId) }
             ?? activeActivities()
@@ -82,6 +90,10 @@ final class TransitLiveActivityBridge: NSObject, LiveActivityBridge {
         endActivities(activities, snapshot: snapshot, dismissalPolicy: policy, reason: reason)
         currentActivity = nil
         return true
+    }
+
+    private var areLiveActivitiesEnabled: Bool {
+        ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
     private func activeActivities(matchingCommuteId commuteId: String? = nil) -> [Activity<TransitWatchAttributes>] {

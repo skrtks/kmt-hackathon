@@ -1,8 +1,8 @@
-# watchOS Live Activity Plan
+# watchOS Live Activity and Companion Plan
 
-Plan version: 0.2.1
+Plan version: 0.3.0
 Target app version: post-MVP iOS/watchOS companion surface
-Status: Refresh hardening implemented; physical-device verification pending
+Status: Native watchOS companion target implemented; physical-device verification pending
 Last updated: 2026-04-29
 
 ## Versioning
@@ -15,6 +15,7 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `0.3.0` - Added a native embedded watchOS SwiftUI companion target, WatchConnectivity snapshot sync from the iPhone, and WatchKit haptics matching the app's shared haptic vocabulary.
 - `0.2.1` - Reapplied refresh hardening after rebase: Boolean ActivityKit acknowledgements, retryable failed starts/ends, serialized Swift bridge operations, stale-date fallback, watch-stopped final copy, widget wall-clock display, and regression coverage.
 - `0.2.0` - Added refresh hardening scope for suspended-app transitions, failed ActivityKit requests, lifecycle races, stale Live Activity content, and active-commute edit refreshes.
 - `0.1.2` - Implementation: shared `WatchCopy` + `LiveActivitySnapshot` + `LiveActivityController`, `TransitAppModel` wiring, Android/JVM no-ops, iOS bridge + Swift widget extension sources. Remaining manual step: add `iosApp/TransitLiveActivity/` as a Widget Extension target inside Xcode.
@@ -23,19 +24,18 @@ Plan versions use `major.minor.patch`.
 
 ## Scope Clarification
 
-There is no dedicated "watchOS Live Activity" API. Live Activities are an iOS feature delivered via `ActivityKit`. On a paired Apple Watch they appear automatically in the Smart Stack and as a complication-style row, mirrored from the iPhone Live Activity. This plan therefore:
+Live Activities remain an iOS `ActivityKit` feature and still mirror automatically to the Apple Watch Smart Stack. This plan now also includes a native embedded watchOS SwiftUI app target for users who open the companion app directly on the watch. The native watchOS app:
 
-- Adds a single iOS Live Activity (`ActivityKit` + `WidgetKit` widget extension) driven by the Kotlin Multiplatform shared engine.
-- Verifies the Live Activity renders correctly on watchOS Smart Stack (no separate watchOS target, no `WatchKit` app).
-- Defers a standalone watchOS app target (`watchOS Extension`) as a follow-up if/when independent watch features are requested.
-
-If the user actually wants a fully native, standalone watchOS app target, that is a different scope and requires its own plan.
+- Uses the phone app as source of truth for saved commutes, active sessions, timing, and notifications.
+- Receives the same `LiveActivitySnapshot` payload over `WatchConnectivity`.
+- Stays read-only until a watch-to-phone command path is explicitly scoped.
+- Matches the Wear companion's active-session glance pattern: black background, water countdown, final-call ring, and departure countdown after `I'm leaving`.
 
 ## Summary
 
 Add an iOS Live Activity for the active watch session whose title, body, and per-state copy match the existing `NotificationPlan` output produced by `WatchEngine` in `commonMain`. The Live Activity starts when a watch session starts (manual or auto-start), updates as the active leave-window group transitions through `GetReady → LeaveNow → FinalCall`, and ends when the session ends, the user taps "I'm leaving," skips the active group, or the schedule window closes.
 
-The Live Activity reuses the same shared model that drives notifications and the watch screen, so the user sees identical wording on the lock screen banner, in Dynamic Island, in the iPhone Live Activity card, and on the paired Apple Watch Smart Stack.
+The Live Activity reuses the same shared model that drives notifications and the watch screen, so the user sees identical wording on the lock screen banner, in Dynamic Island, in the iPhone Live Activity card, on the paired Apple Watch Smart Stack, and inside the native watchOS companion app.
 
 ## Key Changes
 
@@ -79,6 +79,19 @@ The Live Activity reuses the same shared model that drives notifications and the
 - Wire `PlatformServices.liveActivityController()` to return the iOS controller.
 - On app launch, reconcile state: if `userData.activeSession` exists but no live activity is running, restart one from the current snapshot. If a live activity is running but no active session exists, end it.
 
+### watchOS (`iosApp/WatchApp`)
+
+- Add `WatchApp`, an embedded native SwiftUI watchOS target in `iosApp.xcodeproj`.
+- Add `WatchConnectivitySnapshotBridge` on the iPhone side to publish active `LiveActivitySnapshot` dictionaries with the same fields used by Android Wear Data Layer sync.
+- Add `WatchSessionModel` on watchOS to consume `WCSession.applicationContext`, cache the latest active snapshot, and drive foreground haptics.
+- Match the existing active-session haptic semantics with WatchKit haptics:
+  - `Selection` / low progress tick → `.click`
+  - medium progress → `.directionUp`
+  - high progress / warning → `.notification`
+  - confirmation → `.success`
+  - critical / error → `.failure`
+- Keep the native watchOS app read-only in this milestone; no placeholder watch action buttons.
+
 ### Android and JVM
 
 - Add `AndroidLiveActivityController` and `JvmLiveActivityController` no-op implementations that report `isSupported() = false`. Live Activities are an iOS-only platform concept; Android's roughly equivalent surface (ongoing notification with `setOngoing` + `MediaStyle`-like progress) is out of scope for this plan.
@@ -104,10 +117,11 @@ Interaction:
 - No action buttons inside the Live Activity (consistent with existing notification rule "no notification action buttons").
 - Skip and "I'm leaving" remain in-app actions; they update or end the activity but do not appear as activity buttons.
 
-Smart Stack on watchOS:
+Apple Watch surfaces:
 
 - The Live Activity mirrors automatically; verify compact and expanded layouts render within Apple's watchOS dimension guidance (small leading/trailing region, two-line body cap).
 - Rely only on system fonts and SF Symbols to avoid extra asset wiring in v1.
+- The native watchOS app displays the active snapshot when opened and uses local wall-clock progression so `GetReady`, `LeaveNow`, and `FinalCall` stay current even if the phone is temporarily idle.
 
 ## Implementation Order
 
@@ -129,7 +143,12 @@ Smart Stack on watchOS:
    - Handle authorization and unsupported-OS fallbacks.
 5. **Android/JVM no-ops**
    - Add `isSupported = false` controllers; document the gap in `AGENTS.md`.
-6. **Polish**
+6. **watchOS companion**
+   - Add the embedded `WatchApp` target.
+   - Add WatchConnectivity snapshot publishing from the iOS bridge.
+   - Build the read-only SwiftUI active-session and empty/offline states.
+   - Match the shared haptic vocabulary with WatchKit haptic types.
+7. **Polish**
    - Verify on a paired Apple Watch in the Smart Stack.
    - Verify Dynamic Island states.
    - Verify Live Activity recovers after force-quitting and relaunching the app.
@@ -150,17 +169,19 @@ Smart Stack on watchOS:
 - **Manual iOS verification (Xcode)**
   - Build and run on iPhone simulator (iOS 17+) with Live Activities enabled; confirm lock screen + Dynamic Island layouts.
   - Run on a physical iPhone paired with an Apple Watch; verify Smart Stack rendering and tap-through.
+  - Build and install the embedded WatchApp on a paired Apple Watch; verify active snapshot sync, empty/offline states, and foreground haptic timing.
   - Force-quit the app mid-session; reopen and confirm the activity is restored.
   - Toggle Live Activities off in Settings; verify the app continues to function and notifications still fire.
 - **Platform checks**
   - `GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :composeApp:allTests`.
   - `./gradlew :composeApp:assembleDebug` (Android still compiles with no-op controller).
-  - Open `iosApp/iosApp.xcodeproj`, build app + widget extension targets, run on device.
+  - `xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`.
+  - `xcodebuild -project iosApp/iosApp.xcodeproj -scheme WatchApp -configuration Debug -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO build`.
 
 ## Assumptions
 
 - Live Activities target iOS 16.2+ and watchOS 10+ (Smart Stack mirroring requires watchOS 10).
-- The Apple Watch surface is Smart Stack only; no standalone watchOS app target is added.
+- The Apple Watch surfaces include Smart Stack mirroring and an embedded native watchOS app target. The watch app remains companion-only and phone-authored for this milestone.
 - Live Activity content updates are driven from the foreground app and from existing scheduled wake-ups; APNs push updates are out of scope for v1.
 - Apple's 8-hour Live Activity lifetime cap is acceptable; sessions naturally end before that limit (`WatchSession` ends within minutes of `FinalCall`).
 - All notification copy already in `WatchEngine` is the canonical wording; the Live Activity must follow it, not the other way around.
@@ -171,4 +192,4 @@ Smart Stack on watchOS:
 - **Countdown rendering**: Use `Text(timerInterval:)` for the time-to-leave and time-to-final-call counters. System-driven, no per-second update calls from the app side.
 - **Watch-stopped dismissal**: `.dismissalPolicy(.after(now + 2 minutes))` so the reason stays readable on the lock screen / Smart Stack briefly, then auto-clears.
 - **Visibility**: Live Activity starts when the watch session starts (`GetReady`) and surfaces all states through to end. Earlier visibility chosen so the watch face has context before the leave window opens.
-- **Smart Stack**: iOS Live Activity mirrored automatically by Apple. No standalone watchOS app target.
+- **Apple Watch surfaces**: iOS Live Activity mirrors automatically to Smart Stack, and the embedded native watchOS companion app displays the same phone-authored active snapshot.
