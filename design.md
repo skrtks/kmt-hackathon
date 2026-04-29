@@ -1,6 +1,6 @@
 # Leave Window Design System
 
-Version: 0.2.0
+Version: 0.3.0
 Status: Implemented baseline
 Last updated: 2026-04-29
 
@@ -22,6 +22,7 @@ Core flow:
 - If a watch is active, Home shows the active watch card, actions, next windows, and saved commutes in one view.
 - There is no separate active-watch screen.
 - Settings is a normal page with a back button and horizontal slide/fade transition.
+- Wear OS is a companion surface focused on active-session glanceability and quick actions.
 
 ## Current Design Principles
 
@@ -53,6 +54,19 @@ Avoid:
 - Heavy shadows.
 - Nested cards.
 - Route colors as large full-surface backgrounds unless contrast is guaranteed.
+
+## Wear OS Direction
+
+The Wear OS app uses Wear Compose Material3 and is a separate Android artifact, not a responsive variant of the full app.
+
+Wear design principles:
+
+- Show the active leave decision first.
+- Use black app and tile backgrounds.
+- Keep screens vertical, shallow, and glanceable.
+- Keep setup and configuration on the phone.
+- Use Tile and Ongoing Activity surfaces for re-entry into the active watch state.
+- Treat route/status colors as small accents over black, not as full-screen decorative themes.
 
 ## Theme System
 

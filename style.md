@@ -1,6 +1,6 @@
 # Leave Window Style Guide
 
-Version: 0.1.0
+Version: 0.2.0
 Status: Current implementation guide
 Last updated: 2026-04-29
 
@@ -186,9 +186,21 @@ Active watch:
 
 ## Implementation Notes
 
-- Keep shared UI in `commonMain`.
+- Keep full-size shared UI in `composeApp/src/commonMain`.
+- Keep UI-free domain and transit logic in `shared/src/commonMain`.
 - Keep platform services behind `expect/actual` in `core/PlatformServices.kt`.
 - Prefer existing model methods in `TransitAppModel` over manipulating state directly from UI.
 - Keep validation rules in shared model/helper functions when they affect product behavior.
 - Add tests for model behavior changes, especially watch-session lifecycle, scheduling, and persistence.
 - For docs-only changes, compile/tests are optional unless the docs describe code that was changed in the same turn.
+
+## Wear OS Rules
+
+- Build Wear OS as a watch-native companion in `:wearApp`; do not shrink the full-size `App()` UI.
+- Use Wear Compose Material3 components, not mobile Material3 components.
+- Use a black background on watch surfaces.
+- Keep hierarchy shallow: active session, no-active state, and simple commute-start entry points.
+- Keep essential text at 12sp or larger and touch targets at least 48dp.
+- Use short, literal watch copy: `Leave now`, `Final call`, `Leave by <time>`, `No active watch`.
+- Disable or hide watch actions until the corresponding phone command path is wired.
+- Do not put commute setup, place setup, schedule editing, or theme selection on the watch MVP.

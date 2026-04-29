@@ -11,8 +11,14 @@ This file provides guidance to coding agents (Claude Code, Cursor, Copilot, etc.
 # Android debug build
 ./gradlew :composeApp:assembleDebug
 
+# Wear OS debug build
+./gradlew :wearApp:assembleDebug
+
 # All tests (all targets)
 ./gradlew :composeApp:allTests
+
+# Shared domain/transit tests
+./gradlew :shared:allTests
 
 # All tests with a workspace-local Gradle cache
 GRADLE_USER_HOME=/tmp/kmt-hackathon-gradle ./gradlew :composeApp:allTests
@@ -30,9 +36,14 @@ No lint tooling configured (no Detekt/Ktlint). Kotlin official code style enforc
 
 ## Architecture
 
-**Kotlin Multiplatform + Compose Multiplatform** targeting Android, iOS, Desktop (JVM). Single module: `:composeApp`.
+**Kotlin Multiplatform + Compose Multiplatform** targeting Android, iOS, Desktop (JVM), plus a separate Wear OS Android app.
 
-All shared code lives in `composeApp/src/commonMain/`. Platform-specific code uses the `expect/actual` pattern:
+Modules:
+- `:shared` — KMP library for UI-free domain, transit data, timing engine, repository contracts, and platform service contracts.
+- `:composeApp` — phone/tablet/desktop/iOS Compose Multiplatform app.
+- `:wearApp` — Wear OS Android companion app using Wear Compose Material3.
+
+Shared domain code lives in `shared/src/commonMain/`. The full-size app UI and `TransitAppModel` currently live in `composeApp/src/commonMain/`. Platform-specific code uses the `expect/actual` pattern:
 - `Platform.kt` — `expect fun getPlatform(): Platform`
 - `Platform.android.kt` / `Platform.ios.kt` / `Platform.jvm.kt` — `actual` implementations
 
@@ -40,8 +51,9 @@ Platform entry points all call the shared `App()` composable:
 - Android: `MainActivity` → `setContent { App() }`
 - Desktop: `main.kt` → `Window { App() }`
 - iOS: `MainViewController.kt` → `ComposeUIViewController { App() }`
+- Wear OS: `WearMainActivity` → `setContent { WearApp(...) }`
 
-UI uses **Material3** via Compose Multiplatform. Lifecycle/ViewModel from `androidx.lifecycle` works cross-platform via KMP-compatible artifacts.
+The full-size app UI uses **Material3** via Compose Multiplatform. The Wear OS app uses **Wear Compose Material3** and must stay watch-native rather than reusing the full-size `App()` UI.
 
 Design-system notes:
 - `design.md` captures the current Material 3 / M3 Expressive design system and how it maps to the implemented app.
@@ -53,8 +65,9 @@ Design-system notes:
 
 Current first-version app architecture:
 
-- `core/DomainModels.kt` contains persisted user data, saved places/commutes, schedule, session, leave-window, and notification-plan models.
-- `core/WatchEngine.kt` owns walking-time calculation, leave-window calculation, merge behavior, schedule validation, and notification-plan generation.
+- `shared/src/commonMain/.../core/DomainModels.kt` contains persisted user data, saved places/commutes, schedule, session, leave-window, and notification-plan models.
+- `shared/src/commonMain/.../core/WatchEngine.kt` owns walking-time calculation, leave-window calculation, merge behavior, schedule validation, and notification-plan generation.
+- `shared/src/commonMain/.../core/PlatformContracts.kt` defines service contracts for persistence, notifications, time, haptics, and live activity surfaces.
 - `core/TransitAppModel.kt` is the shared state holder for onboarding, saved commutes, settings, active watch sessions, and UI actions.
 - Home is the single active-watch destination. Active sessions render as a full dashboard section on Home; there is no separate Watch screen route.
 - Settings is a normal page route opened from Home and closed with a back button. It uses a horizontal slide/fade transition, not a sheet/popover.
@@ -66,10 +79,18 @@ Current first-version app architecture:
   - `Departure in <countdown>` after the user taps `I'm leaving`.
 - Tapping `I'm leaving` captures the selected departure/group, silences notifications, shows the departure countdown, and ends the watch when that departure time is reached. Auto-start for that commute is suppressed until the current schedule window ends so it does not immediately restart.
 - Edge-to-edge visuals are allowed at the app root, but scrollable screens need bottom scroll tail space for Android navigation controls. Prefer scroll content insets/spacers over root bottom padding when solving nav-bar overlap.
-- `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, and time.
+- `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, time, live activity updates, haptics, and Wear-device detection in `:composeApp`.
 - Android/iOS/JVM actual implementations live under the matching platform source sets.
 - Android notifications use `AlarmManager` in `AndroidPlatformServices.kt`. When exact pending-intent alarms are allowed, the app uses them for process-independent delivery. On newer Android installs where `SCHEDULE_EXACT_ALARM` is denied by default, it also schedules a permission-free in-process exact alarm plus an inexact broadcast fallback so near-term smoke tests still fire while preserving a fallback if the process is gone.
 - `core/WatchEngine.WatchCopy` is the single source of truth for notification titles and Live Activity titles. Active watch card headlines are currently formatted in `App.kt` because they include UI-specific countdown and leave-time presentation. Notification body copy is shared with the Live Activity body via `WatchEngine.notificationBody` and `liveActivitySnapshot`.
+
+### Wear OS
+
+- `:wearApp` is a separate Wear OS APK. Do not add `android.hardware.type.watch` with `required=false` to the phone manifest.
+- The Wear manifest declares `<uses-feature android:name="android.hardware.type.watch" />` and `com.google.android.wearable.standalone=false` for the companion MVP.
+- The first Wear surface reads the phone-published active watch `LiveActivitySnapshot` from the Wear Data Layer path `/transit-live-activity`.
+- Keep the phone app as the source of truth for saved commutes, active sessions, notification scheduling, and transit refresh until a standalone watch product scope is explicitly planned.
+- Wear UI should use black background, Wear Material3 components, `TimeText`, 48dp touch targets, and shallow vertical flows.
 
 ### Live Activity (iOS / watchOS Smart Stack)
 
@@ -86,8 +107,8 @@ Current first-version app architecture:
 
 Early development uses a static in-memory fixture:
 
-- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/transit/MockTransitData.kt`
-- `composeApp/src/commonTest/kotlin/com/samex/kmt_hackathon/transit/MockTransitDataTest.kt`
+- `shared/src/commonMain/kotlin/com/samex/kmt_hackathon/transit/MockTransitData.kt`
+- `shared/src/commonTest/kotlin/com/samex/kmt_hackathon/transit/MockTransitDataTest.kt`
 - `docs/mock-transit-data.md`
 
 The mock dataset includes stops, bus/tram/metro lines, API-style directions/headsigns, and fixed weekday departure times. It deliberately includes shared stops and closely aligned departures so leave-window merging behavior can be developed without live transit data.
