@@ -7,70 +7,6 @@ import com.samex.kmt_hackathon.transit.LineDirection
 import com.samex.kmt_hackathon.transit.TransitStop
 import kotlin.random.Random
 
-sealed interface AppScreen {
-    data object Home : AppScreen
-    data class PlaceEditor(val onboarding: Boolean) : AppScreen
-    data object CommuteSetup : AppScreen
-    data object CommuteEdit : AppScreen
-    data object Settings : AppScreen
-    data object Places : AppScreen
-}
-
-data class PresetPlace(
-    val name: String,
-    val location: GeoPoint,
-)
-
-data class PlaceDraft(
-    val name: String = "Home",
-    val latitude: String = "52.3678",
-    val longitude: String = "4.8933",
-    val onboarding: Boolean = false,
-)
-
-data class CommuteDraft(
-    val editingCommuteId: String? = null,
-    val stopId: String = "",
-    val originPlaceId: String = "",
-    val selections: Set<CommuteLineSelection> = emptySet(),
-    val minEarlyMinutes: String = "1",
-    val maxEarlyMinutes: String = "3",
-    val overrideArrivalBuffer: Boolean = false,
-    val scheduleEnabled: Boolean = false,
-    val scheduleDays: Set<Weekday> = setOf(Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday),
-    val scheduleStart: String = "07:30",
-    val scheduleEnd: String = "09:00",
-)
-
-private fun CommuteDraft.withSingleSelection(): CommuteDraft =
-    if (selections.size <= 1) {
-        this
-    } else {
-        copy(selections = selections.take(1).toSet())
-    }
-
-data class WatchUiState(
-    val commute: SavedCommute,
-    val origin: SavedPlace,
-    val stopName: String,
-    val walkingTimeMinutes: Int,
-    val groups: List<LeaveWindowGroup>,
-    val currentGroup: LeaveWindowGroup?,
-    val currentStatus: WatchStatus?,
-    val silenced: Boolean,
-    val leavingDepartureTimeMinutes: Int?,
-    val leavingGroupId: String?,
-    val notificationStatus: NotificationPermissionStatus,
-    val errorMessage: String?,
-)
-
-enum class DemoWatchScenario {
-    GetReady,
-    LeaveNow,
-    FinalCall,
-}
-
-private const val SECONDS_PER_DAY = MINUTES_PER_DAY * 60
 private const val DEBUG_SKIP_LEAD_SECONDS = 5
 
 class TransitAppModel(
@@ -81,11 +17,13 @@ class TransitAppModel(
     private val liveActivityController: LiveActivityController = NoopLiveActivityController,
 ) {
     private val engine = WatchEngine(transitRepository)
-    private var lastLiveSnapshot: LiveActivitySnapshot? = null
-    private var pendingLiveActivityEndReason: LiveActivityEndReason? = null
+    private val liveActivitySync = LiveActivitySyncCoordinator(
+        controller = liveActivityController,
+        currentSnapshot = { currentLiveSnapshot() },
+        clockSecondsOfDay = { nowSecondsOfDay },
+    )
     private val autoStartSuppressedCommuteIds = mutableSetOf<String>()
     private var debugClockOffsetSeconds: Int = 0
-    private var forceLiveActivityClockSync: Boolean = false
 
     var screen: AppScreen by mutableStateOf<AppScreen>(AppScreen.Home)
         private set
@@ -136,7 +74,7 @@ class TransitAppModel(
             restoredActiveSession && userData.activeSession != null -> AppScreen.Home
             else -> AppScreen.Home
         }
-        reconcileLiveActivityOnLoad(restored = userData.activeSession != null)
+        liveActivitySync.reconcileOnLoad(restored = userData.activeSession != null)
     }
 
     fun tick() {
@@ -145,7 +83,7 @@ class TransitAppModel(
         expireLeavingSessionIfNeeded()
         stopAutoStartedSessionAfterScheduleEnd()
         maybeAutoStartForegroundSchedule()
-        syncLiveActivity()
+        liveActivitySync.sync()
     }
 
     fun requestNotificationPermission() {
@@ -225,28 +163,14 @@ class TransitAppModel(
     fun beginCommuteSetup(preselectedOriginPlaceId: String? = null) {
         val firstStop = transitRepository.stops().firstOrNull()?.id.orEmpty()
         val origin = preselectedOriginPlaceId ?: userData.places.firstOrNull()?.id.orEmpty()
-        commuteDraft = CommuteDraft(stopId = firstStop, originPlaceId = origin)
+        commuteDraft = newCommuteDraft(firstStopId = firstStop, originPlaceId = origin)
         screen = AppScreen.CommuteSetup
         errorMessage = null
     }
 
     fun beginCommuteEdit(commuteId: String) {
         val commute = userData.commutes.firstOrNull { it.id == commuteId } ?: return
-        val defaultBuffer = userData.settings.defaultArrivalBuffer
-        val schedule = commute.schedule
-        commuteDraft = CommuteDraft(
-            editingCommuteId = commute.id,
-            stopId = commute.stopId,
-            originPlaceId = commute.originPlaceId,
-            selections = commute.selections.take(1).toSet(),
-            minEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).minEarlyMinutes.toString(),
-            maxEarlyMinutes = (commute.arrivalBufferOverride ?: defaultBuffer).maxEarlyMinutes.toString(),
-            overrideArrivalBuffer = commute.arrivalBufferOverride != null,
-            scheduleEnabled = schedule != null,
-            scheduleDays = schedule?.days?.toSet() ?: CommuteDraft().scheduleDays,
-            scheduleStart = schedule?.startMinutes?.let(::formatMinutesOfDay) ?: CommuteDraft().scheduleStart,
-            scheduleEnd = schedule?.endMinutes?.let(::formatMinutesOfDay) ?: CommuteDraft().scheduleEnd,
-        )
+        commuteDraft = commute.toDraft(userData.settings.defaultArrivalBuffer)
         screen = AppScreen.CommuteEdit
         errorMessage = null
     }
@@ -265,62 +189,22 @@ class TransitAppModel(
     }
 
     fun saveCommute() {
-        val originId = commuteDraft.originPlaceId
-        if (originId.isBlank() || userData.places.none { it.id == originId }) {
-            errorMessage = "Choose an origin place."
-            return
-        }
-        if (commuteDraft.selections.size != 1) {
-            errorMessage = "Select one line and direction."
-            return
-        }
-
-        val arrivalBuffer = if (commuteDraft.overrideArrivalBuffer) {
-            val min = commuteDraft.minEarlyMinutes.toIntOrNull()
-            val max = commuteDraft.maxEarlyMinutes.toIntOrNull()
-            if (min == null || max == null || min < 0 || max < min) {
-                errorMessage = "Enter a valid arrival buffer."
-                return
-            }
-            ArrivalBuffer(min, max)
-        } else {
-            null
-        }
-
-        val schedule = if (commuteDraft.scheduleEnabled) {
-            val start = parseMinutesOfDay(commuteDraft.scheduleStart)
-            val end = parseMinutesOfDay(commuteDraft.scheduleEnd)
-            if (start == null || end == null || commuteDraft.scheduleDays.isEmpty() || start >= end) {
-                errorMessage = "Enter a valid schedule."
-                return
-            }
-            AutoStartSchedule(
-                days = commuteDraft.scheduleDays.sortedBy { it.ordinal },
-                startMinutes = start,
-                endMinutes = end,
-            )
-        } else {
-            null
-        }
-
-        val existingCommute = commuteDraft.editingCommuteId?.let { editingId ->
-            userData.commutes.firstOrNull { it.id == editingId }
-        }
-        val autoStartEnabled = when {
-            schedule == null -> false
-            existingCommute == null -> true
-            existingCommute.schedule == null -> true
-            else -> existingCommute.autoStartEnabled
-        }
-        val commute = SavedCommute(
-            id = existingCommute?.id ?: newId("commute"),
-            originPlaceId = originId,
-            stopId = commuteDraft.stopId,
-            selections = commuteDraft.selections.toList(),
-            arrivalBufferOverride = arrivalBuffer,
-            schedule = schedule,
-            autoStartEnabled = autoStartEnabled,
+        val buildResult = commuteDraft.toSavedCommute(
+            userData = userData,
+            newCommuteId = { newId("commute") },
         )
+        val commute: SavedCommute
+        val existingCommute: SavedCommute?
+        when (buildResult) {
+            is CommuteDraftBuildResult.Error -> {
+                errorMessage = buildResult.message
+                return
+            }
+            is CommuteDraftBuildResult.Success -> {
+                commute = buildResult.commute
+                existingCommute = buildResult.existingCommute
+            }
+        }
 
         val nextCommutes = if (existingCommute == null) {
             userData.commutes + commute
@@ -396,14 +280,14 @@ class TransitAppModel(
         if (!enabled) {
             debugClockOffsetSeconds = 0
             updateClock()
-            forceLiveActivityClockSync = true
+            liveActivitySync.requestClockSync()
         }
         updateUserData(
             userData.copy(
                 settings = userData.settings.copy(debugModeEnabled = enabled),
             ),
         )
-        syncLiveActivity(forceClockSync = !enabled)
+        liveActivitySync.sync(forceClockSync = !enabled)
     }
 
     fun debugSkipToNextWatchTransition() {
@@ -413,7 +297,7 @@ class TransitAppModel(
         val targetSeconds = (nextTransitionSeconds - DEBUG_SKIP_LEAD_SECONDS).mod(SECONDS_PER_DAY)
         val actualSeconds = timeProvider.nowSecondsOfDay().mod(SECONDS_PER_DAY)
         debugClockOffsetSeconds = secondsBetween(actualSeconds, targetSeconds)
-        forceLiveActivityClockSync = true
+        liveActivitySync.requestClockSync()
         tick()
     }
 
@@ -437,7 +321,7 @@ class TransitAppModel(
 
     fun startDemoWatch(scenario: DemoWatchScenario) {
         debugClockOffsetSeconds = 0
-        forceLiveActivityClockSync = true
+        liveActivitySync.requestClockSync()
         updateClock()
         val commute = userData.activeSession
             ?.let { activeSession -> userData.commutes.firstOrNull { it.id == activeSession.commuteId } }
@@ -456,7 +340,7 @@ class TransitAppModel(
             return
         }
 
-        val demoTiming = demoTimingFor(scenario)
+        val demoTiming = demoTimingFor(scenario, nowMinutes)
         val demoWindow = LeaveWindow(
             departureId = "demo-${scenario.name.lowercase()}-$nowSecondsOfDay",
             stopId = commute.stopId,
@@ -503,7 +387,7 @@ class TransitAppModel(
 
     fun stopActiveSession(reason: LiveActivityEndReason = LiveActivityEndReason.SessionEnded) {
         notificationScheduler.cancelAll()
-        endLiveActivity(reason)
+        liveActivitySync.end(reason)
         activeGroups = emptyList()
         updateUserData(userData.copy(activeSession = null))
         screen = AppScreen.Home
@@ -519,7 +403,7 @@ class TransitAppModel(
                 activeSession = session.copy(skippedGroupIds = skipped),
             ),
         )
-        syncLiveActivity(skippedFallbackReason = LiveActivityEndReason.Skipped)
+        liveActivitySync.sync(skippedFallbackReason = LiveActivityEndReason.Skipped)
     }
 
     fun markLeaving() {
@@ -533,7 +417,7 @@ class TransitAppModel(
             group = group,
             status = WatchStatus.LeaveNow,
             walkingMinutes = state.walkingTimeMinutes,
-        ).copy(isLeaving = true).withCurrentClock()
+        ).copy(isLeaving = true)
         notificationScheduler.cancelAll()
         updateUserData(
             userData.copy(
@@ -545,7 +429,7 @@ class TransitAppModel(
                 ),
             ),
         )
-        endLiveActivity(LiveActivityEndReason.Leaving, snapshotOverride = leavingSnapshot)
+        liveActivitySync.end(LiveActivityEndReason.Leaving, snapshotOverride = leavingSnapshot)
     }
 
     fun stops(): List<TransitStop> = transitRepository.stops()
@@ -646,7 +530,7 @@ class TransitAppModel(
         activeGroups = groups
         notificationScheduler.cancelAll()
         scheduleNotificationsForSession(session, groups)
-        syncLiveActivity(forceClockSync = true)
+        liveActivitySync.sync(forceClockSync = true)
         errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
     }
 
@@ -727,37 +611,6 @@ class TransitAppModel(
     private fun newId(prefix: String): String =
         "$prefix-${timeProvider.nowMinutesOfDay()}-${Random.nextInt(1_000_000)}"
 
-    private fun minutesBetween(start: Int, end: Int): Int =
-        if (end >= start) end - start else (MINUTES_PER_DAY - start) + end
-
-    private fun secondsBetween(start: Int, end: Int): Int =
-        if (end >= start) end - start else (SECONDS_PER_DAY - start) + end
-
-    private data class DemoTiming(
-        val windowOpenMinutes: Int,
-        val finalCallMinutes: Int,
-        val departureTimeMinutes: Int,
-    )
-
-    private fun demoTimingFor(scenario: DemoWatchScenario): DemoTiming =
-        when (scenario) {
-            DemoWatchScenario.GetReady -> DemoTiming(
-                windowOpenMinutes = nowMinutes + 1,
-                finalCallMinutes = nowMinutes + 2,
-                departureTimeMinutes = nowMinutes + 3,
-            )
-            DemoWatchScenario.LeaveNow -> DemoTiming(
-                windowOpenMinutes = nowMinutes - 1,
-                finalCallMinutes = nowMinutes + 1,
-                departureTimeMinutes = nowMinutes + 2,
-            )
-            DemoWatchScenario.FinalCall -> DemoTiming(
-                windowOpenMinutes = nowMinutes - 1,
-                finalCallMinutes = nowMinutes,
-                departureTimeMinutes = nowMinutes + 1,
-            )
-        }
-
     private fun nextDebugTransitionSeconds(): Int? {
         val state = watchUiState() ?: return null
         val groupTransitions = state.groups.flatMap { group ->
@@ -806,7 +659,6 @@ class TransitAppModel(
     }
 
     private fun startLiveActivityForSession(commute: SavedCommute, origin: SavedPlace) {
-        if (!liveActivityController.isSupported()) return
         val skipped = userData.activeSession?.skippedGroupIds?.toSet().orEmpty()
         val group = engine.currentGroup(activeGroups, nowMinutes, skipped) ?: return
         val status = engine.statusFor(group, nowMinutes)
@@ -817,97 +669,7 @@ class TransitAppModel(
             group = group,
             status = status,
             walkingMinutes = walking,
-        ).withCurrentClock()
-        if (liveActivityController.start(snapshot)) {
-            lastLiveSnapshot = snapshot
-            pendingLiveActivityEndReason = null
-        }
+        )
+        liveActivitySync.start(snapshot)
     }
-
-    private fun syncLiveActivity(
-        skippedFallbackReason: LiveActivityEndReason? = null,
-        forceClockSync: Boolean = false,
-    ) {
-        if (!liveActivityController.isSupported()) return
-        val snapshot = currentLiveSnapshot()
-        val shouldForceClockSync = forceClockSync || forceLiveActivityClockSync
-        val pendingEndReason = pendingLiveActivityEndReason
-        when {
-            snapshot == null && (lastLiveSnapshot != null || liveActivityController.isActivityRunning()) -> {
-                val reason = pendingEndReason ?: skippedFallbackReason ?: LiveActivityEndReason.SessionEnded
-                if (liveActivityController.end(
-                    snapshot = lastLiveSnapshot,
-                    reason = reason,
-                )) {
-                    lastLiveSnapshot = null
-                    pendingLiveActivityEndReason = null
-                } else {
-                    pendingLiveActivityEndReason = reason
-                }
-            }
-            snapshot != null && (lastLiveSnapshot == null || !liveActivityController.isActivityRunning()) -> {
-                val syncedSnapshot = snapshot.withCurrentClock()
-                if (liveActivityController.start(syncedSnapshot)) {
-                    lastLiveSnapshot = syncedSnapshot
-                    pendingLiveActivityEndReason = null
-                }
-            }
-            snapshot != null && (shouldForceClockSync || !snapshot.sameLiveContentAs(lastLiveSnapshot)) -> {
-                val syncedSnapshot = snapshot.withCurrentClock()
-                if (liveActivityController.update(syncedSnapshot)) {
-                    lastLiveSnapshot = syncedSnapshot
-                    pendingLiveActivityEndReason = null
-                }
-            }
-        }
-        forceLiveActivityClockSync = false
-    }
-
-    private fun endLiveActivity(
-        reason: LiveActivityEndReason,
-        snapshotOverride: LiveActivitySnapshot? = null,
-    ) {
-        if (!liveActivityController.isSupported()) return
-        val snapshot = snapshotOverride ?: lastLiveSnapshot
-        if (snapshot == null && !liveActivityController.isActivityRunning()) return
-        if (liveActivityController.end(snapshot = snapshot, reason = reason)) {
-            lastLiveSnapshot = if (reason == LiveActivityEndReason.Leaving) snapshot else null
-            pendingLiveActivityEndReason = null
-        } else {
-            pendingLiveActivityEndReason = reason
-        }
-    }
-
-    private fun reconcileLiveActivityOnLoad(restored: Boolean) {
-        if (!liveActivityController.isSupported()) return
-        if (restored) {
-            val snapshot = currentLiveSnapshot()
-            if (snapshot != null) {
-                val syncedSnapshot = snapshot.withCurrentClock()
-                val synced = if (liveActivityController.isActivityRunning()) {
-                    liveActivityController.update(syncedSnapshot)
-                } else {
-                    liveActivityController.start(syncedSnapshot)
-                }
-                if (synced) {
-                    lastLiveSnapshot = syncedSnapshot
-                    pendingLiveActivityEndReason = null
-                }
-            } else if (liveActivityController.isActivityRunning()) {
-                if (!liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)) {
-                    pendingLiveActivityEndReason = LiveActivityEndReason.SessionEnded
-                }
-            }
-        } else if (liveActivityController.isActivityRunning()) {
-            if (!liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)) {
-                pendingLiveActivityEndReason = LiveActivityEndReason.SessionEnded
-            }
-        }
-    }
-
-    private fun LiveActivitySnapshot.withCurrentClock(): LiveActivitySnapshot =
-        copy(syncedNowSecondsOfDay = nowSecondsOfDay)
-
-    private fun LiveActivitySnapshot.sameLiveContentAs(other: LiveActivitySnapshot?): Boolean =
-        copy(syncedNowSecondsOfDay = null) == other?.copy(syncedNowSecondsOfDay = null)
 }

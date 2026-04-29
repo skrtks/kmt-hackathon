@@ -30,6 +30,8 @@ import com.samex.kmt_hackathon.core.AppScreen
 import com.samex.kmt_hackathon.core.CommuteDraft
 import com.samex.kmt_hackathon.core.CommuteLineSelection
 import com.samex.kmt_hackathon.core.TransitAppModel
+import com.samex.kmt_hackathon.core.isSaveable
+import com.samex.kmt_hackathon.core.isTimingValid
 import com.samex.kmt_hackathon.ui.components.*
 
 @Composable
@@ -287,38 +289,9 @@ internal fun canContinueSetupStep(step: CommuteSetupStep, draft: CommuteDraft): 
         CommuteSetupStep.Origin -> draft.originPlaceId.isNotBlank()
         CommuteSetupStep.Stop -> draft.stopId.isNotBlank()
         CommuteSetupStep.Lines -> draft.selections.size == 1
-        CommuteSetupStep.Timing -> isTimingDraftValid(draft)
+        CommuteSetupStep.Timing -> draft.isTimingValid()
         CommuteSetupStep.Review -> canSaveCommuteDraft(draft)
     }
 
 internal fun canSaveCommuteDraft(draft: CommuteDraft): Boolean =
-    draft.originPlaceId.isNotBlank() &&
-            draft.stopId.isNotBlank() &&
-            draft.selections.size == 1 &&
-            isTimingDraftValid(draft)
-internal fun isTimingDraftValid(draft: CommuteDraft): Boolean {
-    val bufferValid = if (draft.overrideArrivalBuffer) {
-        val min = draft.minEarlyMinutes.toIntOrNull()
-        val max = draft.maxEarlyMinutes.toIntOrNull()
-        min != null && max != null && min >= 0 && max >= min
-    } else {
-        true
-    }
-    val scheduleValid = if (draft.scheduleEnabled) {
-        val start = parseSetupMinutesOfDay(draft.scheduleStart)
-        val end = parseSetupMinutesOfDay(draft.scheduleEnd)
-        start != null && end != null && start < end && draft.scheduleDays.isNotEmpty()
-    } else {
-        true
-    }
-    return bufferValid && scheduleValid
-}
-
-internal fun parseSetupMinutesOfDay(value: String): Int? {
-    val parts = value.split(":")
-    if (parts.size != 2) return null
-    val hour = parts[0].toIntOrNull() ?: return null
-    val minute = parts[1].toIntOrNull() ?: return null
-    if (hour !in 0..23 || minute !in 0..59) return null
-    return hour * 60 + minute
-}
+    draft.isSaveable()
