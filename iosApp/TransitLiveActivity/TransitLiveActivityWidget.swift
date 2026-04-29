@@ -32,17 +32,20 @@ struct TransitLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    countdown(to: context.state.finalCallDate)
-                        .font(.title3.monospacedDigit())
+                    CountdownLabel(finalCallDate: context.state.finalCallDate)
+                        .font(.headline.monospacedDigit())
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(context.state.title)
+                    Text(context.state.statusHeadline)
                         .font(.subheadline.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.body)
-                        .font(.caption)
-                        .lineLimit(2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(context.state.routeText)
+                            .font(.caption)
+                            .lineLimit(1)
+                        LeaveWindowProgressView(state: context.state)
+                    }
                 }
             } compactLeading: {
                 Text(context.state.lineLabel)
@@ -67,27 +70,107 @@ struct LockScreenView: View {
     let attributes: TransitWatchAttributes
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(state.title)
+                Text(state.statusHeadline)
                     .font(.headline)
                     .foregroundStyle(.white)
                 Spacer()
-                Text(timerInterval: Date()...state.finalCallDate, countsDown: true)
+                CountdownLabel(finalCallDate: state.finalCallDate)
                     .font(.title3.monospacedDigit())
                     .foregroundStyle(.white)
             }
-            Text(state.body)
+
+            Text(state.routeText)
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(2)
+                .lineLimit(1)
+
+            LeaveWindowProgressView(state: state)
+
             HStack(spacing: 8) {
                 Label(attributes.stopName, systemImage: "mappin.and.ellipse")
                 Spacer()
-                Label("\(state.walkingMinutes) min walk", systemImage: "figure.walk")
+                Label("Leave by \(state.finalCallTimeText)", systemImage: "figure.walk")
             }
             .font(.caption)
             .foregroundStyle(.white.opacity(0.75))
         }
+    }
+}
+
+@available(iOS 16.2, *)
+private struct CountdownLabel: View {
+    let finalCallDate: Date
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(timerInterval: Date()...finalCallDate, countsDown: true)
+            Text("left")
+        }
+    }
+}
+
+@available(iOS 16.2, *)
+private struct LeaveWindowProgressView: View {
+    let state: TransitWatchContentState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ProgressView(timerInterval: state.windowOpenDate...state.finalCallDate, countsDown: false)
+                .progressViewStyle(.linear)
+                .tint(state.progressTint)
+            HStack {
+                Text(state.windowOpenTimeText)
+                Spacer()
+                Text(state.finalCallTimeText)
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.65))
+        }
+    }
+}
+
+private extension TransitWatchContentState {
+    var statusHeadline: String {
+        switch statusRaw {
+        case "GetReady":
+            return "Leave at \(windowOpenTimeText)"
+        case "LeaveNow":
+            return "Leave now"
+        case "FinalCall":
+            return "Final call"
+        case "Missed":
+            return "Next chance at \(windowOpenTimeText)"
+        default:
+            return "Leave at \(windowOpenTimeText)"
+        }
+    }
+
+    var routeText: String {
+        "\(lineLabel) to \(directionHeadsign)"
+    }
+
+    var windowOpenTimeText: String {
+        timeText(windowOpenDate)
+    }
+
+    var finalCallTimeText: String {
+        timeText(finalCallDate)
+    }
+
+    var progressTint: Color {
+        switch statusRaw {
+        case "FinalCall":
+            return Color.orange
+        case "Missed":
+            return Color.red
+        default:
+            return Color.teal
+        }
+    }
+
+    private func timeText(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
     }
 }
