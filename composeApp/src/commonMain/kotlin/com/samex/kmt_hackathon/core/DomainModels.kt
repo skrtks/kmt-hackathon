@@ -109,6 +109,8 @@ data class PersistedWatchSession(
     val silenced: Boolean,
     val skippedGroupIds: List<String>,
     val leavingAtMinutes: Int? = null,
+    val leavingDepartureTimeMinutes: Int? = null,
+    val leavingGroupId: String? = null,
     val startedAutomatically: Boolean = false,
 )
 

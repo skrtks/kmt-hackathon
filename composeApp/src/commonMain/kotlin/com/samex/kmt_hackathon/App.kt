@@ -342,7 +342,7 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
         ActionButtons(compact) {
             Button(
                 onClick = model::markLeaving,
-                enabled = !state.silenced,
+                enabled = state.currentGroup != null && !state.silenced,
                 modifier = responsiveButtonModifier(compact),
             ) {
                 ButtonLabel("I'm leaving")
@@ -526,10 +526,13 @@ private fun ActiveWatchHero(
     )
     val currentGroup = state.currentGroup
     val statusStyle = if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displaySmall
-    val headline = statusHeadline(
-        status = status,
-        leaveAtMinutes = currentGroup?.windowOpenMinutes,
-    )
+    val headline = state.leavingDepartureTimeMinutes
+        ?.takeIf { state.silenced }
+        ?.let { departureCountdownHeadline(departureTimeMinutes = it, nowSecondsOfDay = nowSecondsOfDay) }
+        ?: statusHeadline(
+            status = status,
+            leaveAtMinutes = currentGroup?.windowOpenMinutes,
+        )
 
     Card(
         modifier = Modifier
@@ -607,20 +610,6 @@ private fun ActiveWatchHero(
                 style = MaterialTheme.typography.bodyLarge,
                 color = contentColor.copy(alpha = 0.82f),
             )
-
-            if (state.silenced) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Text(
-                        "Notifications silenced after leaving.",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-            }
 
             actions()
         }
@@ -2654,5 +2643,21 @@ private fun statusHeadline(status: WatchStatus?, leaveAtMinutes: Int? = null): S
         WatchStatus.FinalCall -> "Final call"
         WatchStatus.Missed -> leaveAtText?.let { "Next chance at $it" } ?: "Next chance"
         null -> leaveAtText?.let { "Leave at $it" } ?: "Watching"
+    }
+}
+
+private fun departureCountdownHeadline(departureTimeMinutes: Int, nowSecondsOfDay: Int): String =
+    "Departure in ${formatDepartureCountdown(departureTimeMinutes, nowSecondsOfDay)}"
+
+private fun formatDepartureCountdown(departureTimeMinutes: Int, nowSecondsOfDay: Int): String {
+    val departureSeconds = departureTimeMinutes * 60
+    val remainingSeconds = (departureSeconds - nowSecondsOfDay).coerceAtLeast(0)
+    val hours = remainingSeconds / 3600
+    val minutes = (remainingSeconds % 3600) / 60
+    val seconds = remainingSeconds % 60
+    return if (hours > 0) {
+        "${hours}h ${minutes.toString().padStart(2, '0')}m"
+    } else {
+        "$minutes:${seconds.toString().padStart(2, '0')}"
     }
 }

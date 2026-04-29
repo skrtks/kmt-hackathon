@@ -197,6 +197,32 @@ class TransitAppModelTest {
         assertIs<AppScreen.Home>(model.screen)
     }
 
+    @Test
+    fun leavingSessionEndsAtSelectedDeparture() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val timeProvider = MutableModelTimeProvider(now = 8 * 60 + 26, weekday = Weekday.Monday)
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, timeProvider)
+
+        model.load()
+        model.markLeaving()
+
+        assertEquals(true, model.userData.activeSession?.silenced)
+        assertEquals(8 * 60 + 30, model.userData.activeSession?.leavingDepartureTimeMinutes)
+        assertEquals(model.activeGroups.first().id, model.userData.activeSession?.leavingGroupId)
+
+        timeProvider.now = 8 * 60 + 29
+        model.tick()
+
+        assertNotNull(model.userData.activeSession)
+
+        timeProvider.now = 8 * 60 + 30
+        model.tick()
+
+        assertEquals(null, model.userData.activeSession)
+    }
+
     private fun model(
         repository: UserDataRepository,
         now: Int,
@@ -339,6 +365,17 @@ private class RecordingLiveActivityController(
 
 private class FakeModelTimeProvider(
     private val now: Int,
+    private val weekday: Weekday,
+) : TimeProvider {
+    override fun nowMinutesOfDay(): Int = now
+
+    override fun nowSecondsOfDay(): Int = now * 60
+
+    override fun currentWeekday(): Weekday = weekday
+}
+
+private class MutableModelTimeProvider(
+    var now: Int,
     private val weekday: Weekday,
 ) : TimeProvider {
     override fun nowMinutesOfDay(): Int = now

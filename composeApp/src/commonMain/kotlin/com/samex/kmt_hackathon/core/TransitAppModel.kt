@@ -58,6 +58,8 @@ data class WatchUiState(
     val currentGroup: LeaveWindowGroup?,
     val currentStatus: WatchStatus?,
     val silenced: Boolean,
+    val leavingDepartureTimeMinutes: Int?,
+    val leavingGroupId: String?,
     val notificationStatus: NotificationPermissionStatus,
     val errorMessage: String?,
 )
@@ -71,6 +73,7 @@ class TransitAppModel(
 ) {
     private val engine = WatchEngine(transitRepository)
     private var lastLiveSnapshot: LiveActivitySnapshot? = null
+    private val autoStartSuppressedCommuteIds = mutableSetOf<String>()
 
     var screen: AppScreen by mutableStateOf<AppScreen>(AppScreen.Home)
         private set
@@ -115,12 +118,13 @@ class TransitAppModel(
         notificationStatus = notificationScheduler.permissionStatus()
         updateClock()
         val restoredActiveSession = restoreActiveSession()
+        expireLeavingSessionIfNeeded()
         screen = when {
             userData.places.isEmpty() -> AppScreen.PlaceEditor(onboarding = true)
-            restoredActiveSession -> AppScreen.Home
+            restoredActiveSession && userData.activeSession != null -> AppScreen.Home
             else -> AppScreen.Home
         }
-        reconcileLiveActivityOnLoad(restored = restoredActiveSession)
+        reconcileLiveActivityOnLoad(restored = userData.activeSession != null)
     }
 
     fun tick() {
@@ -424,12 +428,17 @@ class TransitAppModel(
 
     fun markLeaving() {
         val session = userData.activeSession ?: return
+        updateClock()
+        val group = watchUiState()?.currentGroup ?: return
+        val departureTimeMinutes = group.primaryWindow.departureTimeMinutes
         notificationScheduler.cancelAll()
         updateUserData(
             userData.copy(
                 activeSession = session.copy(
                     silenced = true,
                     leavingAtMinutes = timeProvider.nowMinutesOfDay(),
+                    leavingDepartureTimeMinutes = departureTimeMinutes,
+                    leavingGroupId = group.id,
                 ),
             ),
         )
@@ -455,7 +464,17 @@ class TransitAppModel(
         val commute = userData.commutes.firstOrNull { it.id == session.commuteId } ?: return null
         val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return null
         val skipped = session.skippedGroupIds.toSet()
-        val currentGroup = engine.currentGroup(activeGroups, nowMinutes, skipped)
+        val leavingGroup = session.leavingGroupId?.let { groupId ->
+            activeGroups.firstOrNull { it.id == groupId }
+        }
+        val currentGroup = leavingGroup ?: engine.currentGroup(activeGroups, nowMinutes, skipped)
+        val currentStatus = currentGroup?.let { group ->
+            if (session.silenced && session.leavingDepartureTimeMinutes != null) {
+                WatchStatus.LeaveNow
+            } else {
+                engine.statusFor(group, nowMinutes)
+            }
+        }
         return WatchUiState(
             commute = commute,
             origin = origin,
@@ -463,8 +482,10 @@ class TransitAppModel(
             walkingTimeMinutes = engine.walkingTimeMinutes(origin.location, commute.stopId, userData.settings.walkingSpeed),
             groups = activeGroups.filterNot { it.id in skipped },
             currentGroup = currentGroup,
-            currentStatus = currentGroup?.let { engine.statusFor(it, nowMinutes) },
+            currentStatus = currentStatus,
             silenced = session.silenced,
+            leavingDepartureTimeMinutes = session.leavingDepartureTimeMinutes,
+            leavingGroupId = session.leavingGroupId,
             notificationStatus = notificationStatus,
             errorMessage = errorMessage,
         )
@@ -474,6 +495,7 @@ class TransitAppModel(
         val commute = userData.commutes.firstOrNull { it.id == commuteId } ?: return
         val origin = userData.places.firstOrNull { it.id == commute.originPlaceId } ?: return
         updateClock()
+        autoStartSuppressedCommuteIds -= commuteId
 
         val groups = groupsFor(commute, origin)
 
@@ -546,7 +568,15 @@ class TransitAppModel(
     private fun expireLeavingSessionIfNeeded() {
         val session = userData.activeSession ?: return
         val leavingAt = session.leavingAtMinutes ?: return
-        if (minutesBetween(leavingAt, nowMinutes) >= 30) {
+        val departureTime = session.leavingDepartureTimeMinutes
+        if (departureTime == null) {
+            if (minutesBetween(leavingAt, nowMinutes) >= 30) {
+                stopActiveSession()
+            }
+            return
+        }
+        if (minutesBetween(leavingAt, nowMinutes) >= minutesBetween(leavingAt, departureTime)) {
+            autoStartSuppressedCommuteIds += session.commuteId
             stopActiveSession()
         }
     }
@@ -554,8 +584,13 @@ class TransitAppModel(
     private fun maybeAutoStartForegroundSchedule() {
         if (userData.activeSession != null) return
         val day = timeProvider.currentWeekday()
+        autoStartSuppressedCommuteIds.removeAll { commuteId ->
+            val commute = userData.commutes.firstOrNull { it.id == commuteId }
+            commute?.schedule?.isActive(day, nowMinutes) != true
+        }
         val commute = userData.commutes.firstOrNull { commute ->
             commute.autoStartEnabled &&
+                commute.id !in autoStartSuppressedCommuteIds &&
                 commute.schedule?.isActive(day, nowMinutes) == true
         } ?: return
         startWatch(commute.id, manual = false)
