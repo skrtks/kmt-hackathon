@@ -101,7 +101,8 @@ class WatchEngine(
                         kind = NotificationKind.WindowOpen,
                         fireAtMinutes = group.windowOpenMinutes,
                         title = WatchCopy.title(NotificationKind.WindowOpen),
-                        body = notificationBody(group),
+                        body = notificationCompactBody(group),
+                        expandedBody = notificationExpandedBody(group, NotificationKind.WindowOpen),
                     ),
                     NotificationPlan(
                         id = "${group.id}-final",
@@ -109,7 +110,8 @@ class WatchEngine(
                         kind = NotificationKind.FinalCall,
                         fireAtMinutes = group.finalCallMinutes,
                         title = WatchCopy.title(NotificationKind.FinalCall),
-                        body = notificationBody(group),
+                        body = notificationCompactBody(group),
+                        expandedBody = notificationExpandedBody(group, NotificationKind.FinalCall),
                     ).takeIf { group.finalCallMinutes > sessionStartMinutes },
                 )
             }
@@ -138,6 +140,29 @@ class WatchEngine(
         return "$options from ${formatMinutesOfDay(group.windowOpenMinutes)}-${formatMinutesOfDay(group.finalCallMinutes)}"
     }
 
+    private fun notificationCompactBody(group: LeaveWindowGroup): String {
+        val primary = group.primaryWindow
+        return "${lineLabel(primary)} to ${primary.headsign} - departure ${formatMinutesOfDay(primary.departureTimeMinutes)}"
+    }
+
+    private fun notificationExpandedBody(group: LeaveWindowGroup, kind: NotificationKind): String {
+        val primary = group.primaryWindow
+        return buildList {
+            transitRepository.stopById(primary.stopId)?.name?.takeIf { it.isNotBlank() }?.let(::add)
+            add(
+                when (kind) {
+                    NotificationKind.WindowOpen -> "Window closes ${formatMinutesOfDay(group.finalCallMinutes)}"
+                    NotificationKind.FinalCall -> "Last safe leave time"
+                    NotificationKind.WatchStopped -> WatchCopy.WATCH_STOPPED_BODY
+                },
+            )
+            add("Departure ${formatMinutesOfDay(primary.departureTimeMinutes)}")
+            if (group.windows.size > 1) {
+                add("Options ${optionSummary(group)}")
+            }
+        }.joinToString("\n")
+    }
+
     fun liveActivitySnapshot(
         commuteId: String,
         group: LeaveWindowGroup,
@@ -153,7 +178,7 @@ class WatchEngine(
             title = WatchCopy.headline(status),
             body = notificationBody(group),
             stopName = stopName,
-            lineLabel = "${modeLabel(primary.lineId)} ${primary.lineShortName}",
+            lineLabel = lineLabel(primary),
             directionHeadsign = primary.headsign,
             departureTimeMinutes = primary.departureTimeMinutes,
             windowOpenMinutes = group.windowOpenMinutes,
@@ -170,6 +195,17 @@ class WatchEngine(
             TransitMode.Metro -> "metro"
             null -> "line"
         }
+    }
+
+    private fun lineLabel(window: LeaveWindow): String =
+        "${modeLabel(window.lineId)} ${window.lineShortName}"
+
+    private fun optionSummary(group: LeaveWindowGroup): String {
+        val visibleOptions = group.windows.take(2).joinToString(" or ") { window ->
+            "${lineLabel(window)} ${formatMinutesOfDay(window.departureTimeMinutes)}"
+        }
+        val hiddenCount = group.windows.size - 2
+        return if (hiddenCount > 0) "$visibleOptions +$hiddenCount more" else visibleOptions
     }
 
     private fun groupOf(windows: List<LeaveWindow>): LeaveWindowGroup {

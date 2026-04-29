@@ -169,6 +169,59 @@ class WatchEngineTest {
     }
 
     @Test
+    fun notificationBodiesUseAppSurfaceLanguage() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(departure("dep-1", 8 * 60 + 30)),
+            ),
+        )
+
+        val plans = engine.notificationPlansForSession(
+            groups = groups,
+            sessionStartMinutes = 8 * 60 + 20,
+            skippedGroupIds = emptySet(),
+            silenced = false,
+        )
+
+        val open = plans.first { it.kind == NotificationKind.WindowOpen }
+        val final = plans.first { it.kind == NotificationKind.FinalCall }
+        assertEquals("tram 4 to Central - departure 08:30", open.body)
+        assertEquals("Test Stop\nWindow closes 08:28\nDeparture 08:30", open.expandedBody)
+        assertEquals("tram 4 to Central - departure 08:30", final.body)
+        assertEquals("Test Stop\nLast safe leave time\nDeparture 08:30", final.expandedBody)
+    }
+
+    @Test
+    fun mergedNotificationExpandedBodySummarizesOptions() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(
+                    departure("dep-1", 8 * 60 + 30),
+                    departure("dep-2", 8 * 60 + 31),
+                ),
+            ),
+        )
+
+        val plans = engine.notificationPlansForSession(
+            groups = groups,
+            sessionStartMinutes = 8 * 60 + 20,
+            skippedGroupIds = emptySet(),
+            silenced = false,
+        )
+
+        assertEquals(
+            "Test Stop\nWindow closes 08:28\nDeparture 08:30\nOptions tram 4 08:30 or tram 4 08:31",
+            plans.first { it.kind == NotificationKind.WindowOpen }.expandedBody,
+        )
+    }
+
+    @Test
     fun watchCopyHeadlineCoversEveryStatus() {
         assertEquals("Get ready", WatchCopy.headline(WatchStatus.GetReady))
         assertEquals("Leave now", WatchCopy.headline(WatchStatus.LeaveNow))
@@ -231,6 +284,42 @@ class WatchEngineTest {
 
         assertEquals(WatchCopy.GET_READY, getReady.title)
         assertEquals(WatchCopy.FINAL_CALL, finalCall.title)
+    }
+
+    @Test
+    fun activeWatchPresentationAlignsStateHeadlinesAndTargets() {
+        val groups = engine.groupWindows(
+            engine.leaveWindows(
+                commute = commute,
+                origin = origin,
+                settings = settings,
+                departures = listOf(departure("dep-1", 8 * 60 + 30)),
+            ),
+        )
+        val group = groups.single()
+        val snapshot = engine.liveActivitySnapshot(
+            commuteId = commute.id,
+            group = group,
+            status = WatchStatus.GetReady,
+            walkingMinutes = 1,
+        )
+
+        val getReady = snapshot.activeWatchPresentation(nowSecondsOfDay = (8 * 60 + 25) * 60)
+        val leaveNow = snapshot.copy(status = WatchStatus.LeaveNow)
+            .activeWatchPresentation(nowSecondsOfDay = (8 * 60 + 27) * 60)
+        val finalCall = snapshot.copy(status = WatchStatus.FinalCall)
+            .activeWatchPresentation(nowSecondsOfDay = (8 * 60 + 28) * 60)
+        val leaving = snapshot.copy(status = WatchStatus.LeaveNow, isLeaving = true)
+            .activeWatchPresentation(nowSecondsOfDay = (8 * 60 + 29) * 60 + 55)
+
+        assertEquals("Leave at 08:26", getReady.headline)
+        assertEquals(group.windowOpenMinutes, getReady.timerTargetMinutes)
+        assertEquals("Leave now", leaveNow.headline)
+        assertEquals(group.finalCallMinutes, leaveNow.timerTargetMinutes)
+        assertEquals("Final call", finalCall.headline)
+        assertEquals(true, finalCall.showsFinalCallCue)
+        assertEquals("Departure in 0:05", leaving.headline)
+        assertEquals(group.primaryWindow.departureTimeMinutes, leaving.timerTargetMinutes)
     }
 
     private fun departure(id: String, scheduledTimeMinutes: Int): Departure =

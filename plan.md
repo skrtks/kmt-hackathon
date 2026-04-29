@@ -1,8 +1,8 @@
 # App Implementation Plans
 
-Plan version: 1.0.6  
-Target app version: MVP plus Wear OS companion MVP  
-Status: First app version implemented; Wear OS foundation in progress  
+Plan version: 1.1.5
+Target app version: MVP plus Wear OS companion MVP
+Status: First app version implemented; Wear OS foundation in progress; Android and Wear notification/live activity alignment implemented
 Last updated: 2026-04-29
 
 ## Versioning
@@ -15,6 +15,12 @@ Plan versions use `major.minor.patch`.
 
 ## Version History
 
+- `1.1.5` - Restored concise `Leave now` ongoing status copy after trying explicit countdown text.
+- `1.1.4` - Added live leave-window countdown copy to the `Leave now` ongoing status text.
+- `1.1.3` - Adjusted the Wear Ongoing Activity Recents entry so route title and status text are not duplicated.
+- `1.1.2` - Removed the Android ongoing notification progress bar so notifications use copy plus native countdown only.
+- `1.1.1` - Implemented the Android notification, Android ongoing status, Wear Ongoing Activity, and shared active-surface copy alignment.
+- `1.1.0` - Added the Android notification, Android ongoing status, Wear Ongoing Activity, and live-activity alignment plan.
 - `1.0.6` - Added a final-call pulsing red ring on the Wear active-session screen.
 - `1.0.5` - Smoothed the Wear water countdown at the `Leave at` to `Leave now` boundary.
 - `1.0.4` - Added a Wear active-session water-level countdown background for time remaining until final call.
@@ -26,6 +32,183 @@ Plan versions use `major.minor.patch`.
 - `0.1.2` - Second-pass review fixes for active-session restore, schedule-end handling, exact window-open notification suppression, and regression coverage.
 - `0.1.1` - Marked the first-pass implementation complete.
 - `0.1.0` - Initial implementation plan for the first full MVP using mock transit data.
+
+## Notification And Live Activity Alignment Plan
+
+Align the time-critical out-of-app surfaces with the phone active-watch card and the Wear app. The primary scope is Android phone notifications plus Wear OS app/Ongoing Activity behavior. The repo also contains an iOS ActivityKit widget, so the plan calls out iOS parity as a follow-up surface rather than ignoring it.
+
+### Current Investigation Findings
+
+- Scheduled Android alerts are produced by `WatchEngine.notificationPlansForSession` and delivered by `AndroidNotificationScheduler` / `NotificationReceiver`.
+  - Alert titles are shared through `WatchCopy.title`: `Leave now` and `Final call`.
+  - Alert body copy comes from `WatchEngine.notificationBody`, currently shaped like `tram 4 at 13:44 from 13:29-13:35`.
+  - The notification itself uses the launcher icon, `leave_window_alerts` high-importance channel, app-default sound/vibration, auto-cancel, and no actions.
+  - This satisfies the MVP no-actions rule, but the body does not match current app language because it omits headsign/stop context and uses `from <open>-<final>` instead of `Window closes`, `Departure`, or `Leave by`.
+- Android ongoing status is implemented in `AndroidLiveActivityController`.
+  - It posts a silent low-importance ongoing notification on `active_watch_status`.
+  - It syncs `LiveActivitySnapshot` to the Wear Data Layer path `/transit-live-activity`, even when Android notification permission is not granted.
+  - It uses the shared active-surface presentation for headline, detail text, tone, and countdown target.
+  - It keeps the native countdown/chronometer where supported, but intentionally does not show a notification progress bar.
+  - The phone Android app owns the phone ongoing notification and Data Layer sync; the Wear app owns the Wear Ongoing Activity.
+- Wear in-app active screen is implemented in `WearMainActivity`.
+  - It uses a black full-screen surface, one large headline, route/headsign, stop, optional `Leave by`, and `Departure`.
+  - It shows the blue water background only while the leave window is active and shows a pulsing red edge ring at final call.
+  - It now supports `Departure in <countdown>` after `I'm leaving`.
+  - The screen is visually closer to the phone app than the notifications are.
+- Wear Ongoing Activity is implemented in `WearOngoingActivity`.
+  - It posts a local silent notification with `OngoingActivity` metadata and a short status text.
+  - It uses the same shared active-surface presentation as the Wear screen.
+  - It has no progress surface, which is intentional for Wear Ongoing Activity.
+- iOS ActivityKit exists in `iosApp/TransitLiveActivity`.
+  - It renders a black lock-screen/Dynamic Island activity with status headline, route, final-call countdown, and a linear progress view.
+  - It does not currently model `isLeaving` in `TransitWatchContentState`.
+  - On `LiveActivityEndReason.Leaving`, the iOS bridge ends immediately instead of lingering until departure. That is currently different from Android/Wear.
+
+### Alignment Principles
+
+- One state contract should drive every out-of-app surface:
+  - `GetReady`: headline `Leave at <time>`, target `windowOpenMinutes`.
+  - `LeaveNow`: headline `Leave now`, target `finalCallMinutes`, keep supporting text route/departure focused unless a surface has a native countdown treatment.
+  - `FinalCall`: headline `Final call`, urgent visual treatment, no separate `Leave by` pill/line.
+  - `Leaving`: headline `Departure in <countdown>`, target `departureTimeMinutes`, hide window-progress language.
+  - `Missed`: do not alert; move to the next viable group or clear the live/ongoing surface.
+- Scheduled alert notifications should be event alerts, not miniature live activities.
+  - They may use default sound/vibration and high importance.
+  - They should remain action-free for MVP.
+  - They should open the app when tapped.
+- Ongoing/live surfaces should be quiet return paths and glanceable status.
+  - They should be silent, low importance, ongoing, and update without re-alerting.
+  - They should prioritize the same headline as the app.
+  - They should use short route and departure context, not long instructional copy.
+- Wear surfaces should stay watch-native.
+  - Use `OngoingActivity` status text for the watch-face/recent-apps chip.
+  - Keep the local Wear notification short; use the Wear app screen for the richer visual treatment.
+  - Do not add watch notification action buttons until watch-to-phone command sync exists.
+- The out-of-app copy should follow `style.md`: clear, calm, direct, no cute filler, no technical transport-planning language.
+
+### Target Copy Matrix
+
+Scheduled alert notifications:
+
+- Window open:
+  - Title: `Leave now`
+  - Compact body: `<line> to <headsign> - departure <time>`
+  - Expanded body: `<stopName>\nWindow closes <finalCallTime>\nDeparture <departureTime>`
+- Final call:
+  - Title: `Final call`
+  - Compact body: `<line> to <headsign> - departure <time>`
+  - Expanded body: `<stopName>\nLast safe leave time\nDeparture <departureTime>`
+- Merged group:
+  - Title remains state-based.
+  - Compact body uses the primary departure.
+  - Expanded body lists up to two options, for example `tram 4 13:44 or metro 52 13:45`; add `+N more` if needed.
+
+Android ongoing status:
+
+- Get ready:
+  - Title: `Leave at <windowOpenTime>`
+  - Text: `<line> to <headsign> - departure <time>`
+  - Native countdown target: window open.
+- Leave now:
+  - Title: `Leave now`
+  - Text: `<line> to <headsign> - departure <time>`
+  - No progress bar; use the native countdown target instead of repeating countdown copy.
+- Final call:
+  - Title: `Final call`
+  - Text: `<line> to <headsign> - departure <time>`
+  - No progress bar; accent should be urgent.
+- Leaving:
+  - Title: `Departure in <countdown>`
+  - Text: `<line> to <headsign> - departure <time>`
+  - No progress bar; use the departure countdown.
+
+Wear Ongoing Activity:
+
+- Status text should be even shorter than phone notification text:
+  - `Leave at <time>`
+  - `Leave now`
+  - `Final call`
+  - `Departs in <countdown>` or `Departure in <countdown>` depending what fits on device.
+- Notification title should use the same headline as the Wear in-app active screen.
+- Notification text should be route-first: `<line> to <headsign>`.
+- Expanded text can add stop and `Departure <time>`, but should not include the legacy `from <open>-<final>` body.
+
+iOS ActivityKit follow-up:
+
+- Add `isLeaving` or a derived presentation state to `TransitWatchContentState`.
+- Switch the lock-screen/Dynamic Island target date based on state: window open, final call, or departure.
+- Replace the generic progress view with the same window semantics used on phone/Wear: show window countdown during `LeaveNow`, hide it for `FinalCall` and `Leaving`.
+- Decide whether iOS should linger after `I'm leaving` until departure for parity with Android/Wear, or continue ending immediately as an intentional platform difference.
+
+### Implementation Plan
+
+1. Create a shared active-surface presentation helper.
+   - Add a UI-free helper in `shared/src/commonMain/kotlin/com/samex/kmt_hackathon/core`, for example `WatchSurfaceCopy` or `ActiveWatchPresentation`.
+   - Inputs: `LiveActivitySnapshot`, current seconds/minutes when needed, and surface kind if the surface has tight copy limits.
+   - Outputs:
+     - `headline`
+     - `compactText`
+     - `expandedLines`
+     - `statusTone`
+     - `timerTargetMinutes`
+     - `showsFinalCallCue`
+   - Keep actual Android/Wear notification APIs platform-local; only share the copy/state decisions.
+2. Replace legacy notification body generation.
+   - Keep `NotificationPlan` small, but generate display copy through the new helper or a dedicated alert-copy helper.
+   - Preserve current scheduling behavior and no-action MVP rule.
+   - Switch scheduled alert notifications to `ic_transit_ongoing`, explicit category/visibility/priority, and consistent status color.
+   - Keep channel IDs stable unless there is a concrete reason to migrate; channel names can be clarified if needed.
+3. Simplify Android ongoing notification ownership.
+   - Make phone Android ongoing notification a phone return path only.
+   - Remove or isolate Wear `OngoingActivity` metadata from the phone module if the local Wear app owns the Wear Ongoing Activity.
+   - Keep Data Layer sync in the phone module because it is the source of truth for active snapshots.
+   - Ensure notification permission denial does not block Wear Data Layer sync.
+4. Align Android ongoing notification rendering.
+   - Use the shared headline instead of raw `snapshot.title`.
+   - Use target minutes from the shared presentation helper.
+   - Do not show a progress bar; use clear state copy plus the native countdown/chronometer where supported.
+   - Use urgent accent only for `FinalCall`.
+   - Keep the ongoing notification silent and `setOnlyAlertOnce(true)`.
+5. Align Wear Ongoing Activity rendering.
+   - Use the same presentation helper as the Wear screen.
+   - Replace legacy `snapshot.body` in `ongoingBigText` with explicit stop, route, departure, and optional window-close details.
+   - Keep the status part short enough for the watch-face chip.
+   - Keep the Wear notification local-only and silent.
+6. Align Wear in-app screen with the same presentation helper.
+   - Keep the current visual direction: black surface, blue water background for `LeaveNow`, red pulsing edge for `FinalCall`, departure countdown after leaving.
+   - Replace local duplicate countdown/headline helpers only after the shared helper is in place.
+   - Preserve readable text sizes and round-screen-safe layout.
+7. Add regression tests.
+   - Unit-test the shared presentation helper for `GetReady`, `LeaveNow`, `FinalCall`, `Leaving`, and merged-window cases.
+   - Add Android DataMap round-trip tests for all live snapshot fields, including `isLeaving`.
+   - Add model tests that `I'm leaving` produces a departure-target ongoing snapshot and that scheduled notifications remain canceled.
+   - Keep existing `WatchEngine` notification-copy tests updated to the new body contract.
+8. Manual QA pass.
+   - Use demo mode to produce each state.
+   - Check Android notification shade compact/expanded scheduled alerts.
+   - Check Android ongoing notification compact/expanded state transitions.
+   - Check Wear in-app screen and Wear Ongoing Activity chip/notification.
+   - Check notification permission denied on Android phone and Wear: Wear sync should still update where possible, but local notifications should not post.
+   - Check final-call transition does not produce duplicate alerting or a stale `Leave by` line.
+   - Check `I'm leaving` updates all active surfaces to `Departure in <countdown>` and clears them at departure.
+
+### Acceptance Criteria
+
+- Copy on phone active card, Android ongoing notification, Wear app screen, and Wear Ongoing Activity uses the same state language.
+- Scheduled alerts remain high-importance, action-free, default sound/vibration notifications.
+- Ongoing/live surfaces remain silent, low-importance return paths.
+- Ongoing notifications do not show a progress bar.
+- `Final call` has a clear urgent clue on watch surfaces and does not show stale `Leave by` wording.
+- `I'm leaving` changes ongoing/watch surfaces to `Departure in <countdown>` and keeps them alive until the selected departure time.
+- Wear Data Layer sync continues when phone notification permission is denied.
+- No duplicate watch ongoing surfaces are produced by phone and Wear code fighting for ownership.
+- `./gradlew :wearApp:assembleDebug`, `./gradlew :composeApp:compileDebugKotlinAndroid`, and `./gradlew :composeApp:allTests` pass after implementation.
+
+### Open Decisions
+
+- Whether final-call Android ongoing notification should use only urgent copy/color, or also suppress the native chronometer.
+- Whether the Wear Ongoing Activity status should use `Departure in` or shorter `Departs in` for small chip fit.
+- Whether iOS ActivityKit should match Android/Wear by lingering after `I'm leaving` until departure.
 
 ## Wear OS Port Plan
 

@@ -158,6 +158,7 @@ data class NotificationPlan(
     val fireAtMinutes: Int,
     val title: String,
     val body: String,
+    val expandedBody: String = body,
 )
 
 enum class NotificationKind {

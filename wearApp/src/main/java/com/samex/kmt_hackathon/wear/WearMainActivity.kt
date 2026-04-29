@@ -59,6 +59,7 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.samex.kmt_hackathon.core.LiveActivitySnapshot
 import com.samex.kmt_hackathon.core.WatchStatus
+import com.samex.kmt_hackathon.core.activeWatchPresentation
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
 import kotlinx.coroutines.delay
 import java.util.Calendar
@@ -340,6 +341,7 @@ private fun WearActiveWatchScreen(
     modifier: Modifier = Modifier,
 ) {
     var nowSecondsOfDay by rememberCurrentSecondsOfDay(snapshot)
+    val presentation = snapshot.activeWatchPresentation(nowSecondsOfDay)
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -348,7 +350,7 @@ private fun WearActiveWatchScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = headlineFor(snapshot, nowSecondsOfDay),
+            text = presentation.headline,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.displayMedium,
@@ -395,16 +397,6 @@ private fun WearActiveWatchScreen(
     }
 }
 
-private fun headlineFor(snapshot: LiveActivitySnapshot, nowSecondsOfDay: Int): String =
-    if (snapshot.isLeaving) {
-        "Departure in ${formatDepartureCountdown(snapshot.departureTimeMinutes, nowSecondsOfDay)}"
-    } else when (snapshot.status) {
-        WatchStatus.GetReady -> "Leave at ${formatMinutesOfDay(snapshot.windowOpenMinutes)}"
-        WatchStatus.LeaveNow -> "Leave now"
-        WatchStatus.FinalCall -> "Final call"
-        WatchStatus.Missed -> "Next chance"
-    }
-
 private fun statusAccent(status: WatchStatus): Color =
     when (status) {
         WatchStatus.GetReady -> Color(0xFF7DD3FC)
@@ -440,19 +432,6 @@ private fun currentSecondsOfDay(): Int {
 private fun secondsBetween(startSeconds: Int, endSeconds: Int): Int {
     val raw = (endSeconds - startSeconds) % SECONDS_PER_DAY
     return if (raw < 0) raw + SECONDS_PER_DAY else raw
-}
-
-private fun formatDepartureCountdown(departureTimeMinutes: Int, nowSecondsOfDay: Int): String {
-    val departureSeconds = departureTimeMinutes * SECONDS_PER_MINUTE
-    val remainingSeconds = (departureSeconds - nowSecondsOfDay).coerceAtLeast(0)
-    val hours = remainingSeconds / (MINUTES_PER_HOUR * SECONDS_PER_MINUTE)
-    val minutes = (remainingSeconds % (MINUTES_PER_HOUR * SECONDS_PER_MINUTE)) / SECONDS_PER_MINUTE
-    val seconds = remainingSeconds % SECONDS_PER_MINUTE
-    return if (hours > 0) {
-        "${hours}h ${minutes.toString().padStart(2, '0')}m"
-    } else {
-        "$minutes:${seconds.toString().padStart(2, '0')}"
-    }
 }
 
 private fun elapsedSecondsInWindow(startSeconds: Int, endSeconds: Int, nowSeconds: Int): Int {

@@ -24,8 +24,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.wear.ongoing.OngoingActivity
-import androidx.wear.ongoing.Status
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
@@ -226,8 +224,10 @@ private class AndroidNotificationScheduler(
         saveScheduledIds(loadScheduledIds() + plan.id)
         val intent = Intent(context, NotificationReceiver::class.java).apply {
             putExtra(NotificationReceiver.EXTRA_ID, plan.id)
+            putExtra(NotificationReceiver.EXTRA_KIND, plan.kind.name)
             putExtra(NotificationReceiver.EXTRA_TITLE, plan.title)
             putExtra(NotificationReceiver.EXTRA_BODY, plan.body)
+            putExtra(NotificationReceiver.EXTRA_EXPANDED_BODY, plan.expandedBody)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -269,7 +269,7 @@ private class AndroidNotificationScheduler(
         val listener = AlarmManager.OnAlarmListener {
             removeInProcessAlarm(plan.id)
             alarmManager.cancel(fallbackPendingIntent)
-            postNotification(context, plan.id, plan.title, plan.body)
+            postNotification(context, plan.id, plan.kind, plan.title, plan.body, plan.expandedBody)
         }
 
         replaceInProcessAlarm(plan.id, alarmManager, listener)
@@ -404,6 +404,7 @@ internal class AndroidLiveActivityController(
 
     private fun post(snapshot: LiveActivitySnapshot): Boolean {
         syncWearLiveActivity(context, snapshot)
+        val presentation = snapshot.activeWatchPresentation(currentSecondsOfDay())
         preferences.edit()
             .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
             .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
@@ -412,14 +413,12 @@ internal class AndroidLiveActivityController(
         scheduleCountdownRefresh(snapshot)if (!canPostNotifications(context)) return false
         createLiveActivityChannel(context)
         val pendingIntent = launchPendingIntent(context)
-        val progress = liveActivityProgress(snapshot)
-        val targetMinutes = liveActivityCountdownTargetMinutes(snapshot)
         val notificationBuilder = NotificationCompat.Builder(context, LIVE_ACTIVITY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_transit_ongoing)
-            .setColor(0xFF0F766E.toInt())
-            .setContentTitle(snapshot.title)
-            .setContentText(liveActivityContentText(snapshot, progress.remainingText))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(liveActivityBigText(snapshot)))
+            .setColor(notificationColor(presentation.tone))
+            .setContentTitle(presentation.headline)
+            .setContentText(presentation.compactText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(presentation.expandedLines.joinToString("\n")))
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -427,14 +426,15 @@ internal class AndroidLiveActivityController(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setRequestPromotedOngoing(true)
-            .setShortCriticalText(formatMinutesOfDay(targetMinutes))
+            .setShortCriticalText(formatMinutesOfDay(presentation.timerTargetMinutes))
             .setSilent(true)
-            .setWhen(targetMillis(targetMinutes))
-            .setUsesChronometer(true)
-            .setChronometerCountDown(true)
-            .setProgress(progress.max, progress.value, false)
-
-        applyWearOngoingActivity(context, notificationBuilder, pendingIntent, snapshot)
+            .apply {
+                if (!presentation.showsFinalCallCue) {
+                    setWhen(targetMillis(presentation.timerTargetMinutes))
+                    setUsesChronometer(true)
+                    setChronometerCountDown(true)
+                }
+            }
 
         try {
             NotificationManagerCompat.from(context).notify(LIVE_ACTIVITY_NOTIFICATION_ID, notificationBuilder.build())
@@ -454,7 +454,8 @@ internal class AndroidLiveActivityController(
 
     private fun scheduleCountdownRefresh(snapshot: LiveActivitySnapshot) {
         cancelCountdownRefresh()
-        val remainingMillis = remainingMillisUntil(liveActivityCountdownTargetMinutes(snapshot))
+        val presentation = snapshot.activeWatchPresentation(currentSecondsOfDay())
+        val remainingMillis = remainingMillisUntil(presentation.timerTargetMinutes)
         val delayMillis = when {
             remainingMillis > 60_000L -> 60_000L.coerceAtMost(remainingMillis - 59_999L)
             remainingMillis > 0L -> 1_000L.coerceAtMost(remainingMillis)
@@ -479,14 +480,20 @@ class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
+        val expandedBody = intent.getStringExtra(EXTRA_EXPANDED_BODY) ?: body
         val id = intent.getStringExtra(EXTRA_ID).orEmpty()
-        postNotification(context, id, title, body)
+        val kind = intent.getStringExtra(EXTRA_KIND)
+            ?.let { runCatching { NotificationKind.valueOf(it) }.getOrNull() }
+            ?: NotificationKind.WindowOpen
+        postNotification(context, id, kind, title, body, expandedBody)
     }
 
     companion object {
         const val EXTRA_ID = "notification_id"
+        const val EXTRA_KIND = "notification_kind"
         const val EXTRA_TITLE = "notification_title"
         const val EXTRA_BODY = "notification_body"
+        const val EXTRA_EXPANDED_BODY = "notification_expanded_body"
     }
 }
 
@@ -499,7 +506,6 @@ private const val KEY_LIVE_ACTIVITY_GROUP_ID = "live_activity_group_id"
 private const val NOTIFICATION_PREFERENCES = "leave_window_notifications"
 private const val LIVE_ACTIVITY_CHANNEL_ID = "active_watch_status"
 private const val LIVE_ACTIVITY_NOTIFICATION_ID = 41_080
-private const val LIVE_ACTIVITY_PROGRESS_MAX = 1_000
 internal const val WEAR_LIVE_ACTIVITY_PATH = "/transit-live-activity"
 private const val KEY_WEAR_ACTIVE = "active"
 private const val KEY_WEAR_UPDATED_AT = "updated_at"
@@ -538,15 +544,26 @@ private fun createLiveActivityChannel(context: Context) {
     context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 }
 
-private fun postNotification(context: Context, id: String, title: String, body: String) {
+private fun postNotification(
+    context: Context,
+    id: String,
+    kind: NotificationKind,
+    title: String,
+    body: String,
+    expandedBody: String,
+) {
     if (!canPostNotifications(context) || !markNotificationDelivered(context, id)) return
     createChannel(context)
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-        .setSmallIcon(R.mipmap.ic_launcher)
+        .setSmallIcon(R.drawable.ic_transit_ongoing)
+        .setColor(notificationColor(kind))
         .setContentTitle(title)
         .setContentText(body)
-        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setStyle(NotificationCompat.BigTextStyle().bigText(expandedBody))
         .setContentIntent(launchPendingIntent(context))
+        .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setAutoCancel(true)
         .build()
 
@@ -564,37 +581,6 @@ private fun launchPendingIntent(context: Context): PendingIntent {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 }
-
-private data class LiveActivityProgress(
-    val max: Int,
-    val value: Int,
-    val remainingText: String,
-)
-
-private fun liveActivityCountdownTargetMinutes(snapshot: LiveActivitySnapshot): Int =
-    if (snapshot.isLeaving) snapshot.departureTimeMinutes else snapshot.finalCallMinutes
-
-private fun liveActivityRemainingText(snapshot: LiveActivitySnapshot): String =
-    if (snapshot.isLeaving) {
-        "Departure in ${remainingDurationText(snapshot.departureTimeMinutes)}"
-    } else {
-        remainingTimeText(snapshot.finalCallMinutes)
-    }
-
-private fun liveActivityContentText(snapshot: LiveActivitySnapshot, remainingText: String): String =
-    "$remainingText - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}"
-
-private fun liveActivityBigText(snapshot: LiveActivitySnapshot): String =
-    listOf(
-        liveActivityRemainingText(snapshot),
-        snapshot.body,
-        "${snapshot.stopName} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}",
-        if (snapshot.isLeaving) {
-            "Departure ${formatMinutesOfDay(snapshot.departureTimeMinutes)}"
-        } else {
-            "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}"
-        },
-    ).joinToString("\n")
 
 private fun syncWearLiveActivity(context: Context, snapshot: LiveActivitySnapshot) {
     if (isWearDevice(context)) return
@@ -660,71 +646,14 @@ internal fun isWearLiveActivityActive(dataMap: DataMap): Boolean =
 private fun DataMap.getOptionalInt(key: String): Int? =
     if (containsKey(key)) getInt(key) else null
 
-private fun applyWearOngoingActivity(
-    context: Context,
-    notificationBuilder: NotificationCompat.Builder,
-    pendingIntent: PendingIntent,
-    snapshot: LiveActivitySnapshot,
-) {
-    val status = Status.Builder()
-        .addTemplate("#remaining#")
-        .addPart("remaining", Status.TextPart(liveActivityRemainingText(snapshot)))
-        .build()
-    OngoingActivity.Builder(context, LIVE_ACTIVITY_NOTIFICATION_ID, notificationBuilder)
-        .setStaticIcon(R.drawable.ic_transit_ongoing)
-        .setTouchIntent(pendingIntent)
-        .setTitle(snapshot.title)
-        .setStatus(status)
-        .build()
-        .apply(context)
-}
-
-private fun liveActivityProgress(snapshot: LiveActivitySnapshot): LiveActivityProgress {
-    val totalMillis = liveActivityProgressDurationMillis(snapshot)
-    val targetMinutes = liveActivityCountdownTargetMinutes(snapshot)
-    val remainingMillis = remainingMillisUntil(targetMinutes).coerceAtMost(totalMillis)
-    val elapsedMillis = (totalMillis - remainingMillis).coerceIn(0L, totalMillis)
-    val value = ((elapsedMillis * LIVE_ACTIVITY_PROGRESS_MAX) / totalMillis)
-        .toInt()
-        .coerceIn(0, LIVE_ACTIVITY_PROGRESS_MAX)
-    return LiveActivityProgress(
-        max = LIVE_ACTIVITY_PROGRESS_MAX,
-        value = value,
-        remainingText = liveActivityRemainingText(snapshot),
-    )
-}
-
-private fun liveActivityProgressDurationMillis(snapshot: LiveActivitySnapshot): Long {
-    val durationMinutes = minutesBetween(
-        startMinutes = snapshot.windowOpenMinutes,
-        endMinutes = liveActivityCountdownTargetMinutes(snapshot),
-    ).coerceAtLeast(1)
-    return durationMinutes * 60_000L
-}
-
-private fun minutesBetween(startMinutes: Int, endMinutes: Int): Int {
-    val raw = (endMinutes - startMinutes) % MINUTES_PER_DAY
-    return if (raw < 0) raw + MINUTES_PER_DAY else raw
-}
-
-private fun remainingDurationText(minutesOfDay: Int): String {
-    val remainingMillis = remainingMillisUntil(minutesOfDay)
-    if (remainingMillis < 60_000L) {
-        val remainingSeconds = if (remainingMillis == 0L) 0L else (remainingMillis / 1_000L).coerceAtLeast(1L)
-        val unit = if (remainingSeconds == 1L) "second" else "seconds"
-        return "$remainingSeconds $unit"
-    }
-
-    val remainingMinutes = ((remainingMillis + 59_999L) / 60_000L).coerceAtLeast(0L)
-    val unit = if (remainingMinutes == 1L) "minute" else "minutes"
-    return "$remainingMinutes $unit"
-}
-
-private fun remainingTimeText(minutesOfDay: Int): String =
-    "${remainingDurationText(minutesOfDay)} left"
-
 private fun remainingMillisUntil(minutesOfDay: Int): Long =
     (targetMillis(minutesOfDay) - System.currentTimeMillis()).coerceAtLeast(0L)
+
+private fun currentSecondsOfDay(): Int {
+    val now = Calendar.getInstance()
+    return (now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)) * 60 +
+        now.get(Calendar.SECOND)
+}
 
 private fun targetMillis(minutesOfDay: Int): Long {
     val now = Calendar.getInstance()
@@ -745,6 +674,21 @@ private fun targetMillis(minutesOfDay: Int): Long {
 private fun canPostNotifications(context: Context): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+private fun notificationColor(kind: NotificationKind): Int =
+    when (kind) {
+        NotificationKind.FinalCall -> 0xFFF43F5E.toInt()
+        NotificationKind.WindowOpen,
+        NotificationKind.WatchStopped -> 0xFF0F766E.toInt()
+    }
+
+private fun notificationColor(tone: WatchSurfaceTone): Int =
+    when (tone) {
+        WatchSurfaceTone.Route -> 0xFF38BDF8.toInt()
+        WatchSurfaceTone.Signal -> 0xFF0F766E.toInt()
+        WatchSurfaceTone.FinalCall -> 0xFFF43F5E.toInt()
+        WatchSurfaceTone.Error -> 0xFFDC2626.toInt()
+    }
 
 private fun isWearDevice(context: Context): Boolean =
     context.packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH)
