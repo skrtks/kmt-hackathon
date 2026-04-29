@@ -29,9 +29,9 @@ interface TimeProvider {
 interface LiveActivityController {
     fun isSupported(): Boolean
     fun isActivityRunning(): Boolean
-    fun start(snapshot: LiveActivitySnapshot)
-    fun update(snapshot: LiveActivitySnapshot)
-    fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason)
+    fun start(snapshot: LiveActivitySnapshot): Boolean
+    fun update(snapshot: LiveActivitySnapshot): Boolean
+    fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean
 }
 
 enum class HapticEffect {
@@ -51,9 +51,9 @@ interface HapticFeedbackController {
 object NoopLiveActivityController : LiveActivityController {
     override fun isSupported(): Boolean = false
     override fun isActivityRunning(): Boolean = false
-    override fun start(snapshot: LiveActivitySnapshot) = Unit
-    override fun update(snapshot: LiveActivitySnapshot) = Unit
-    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) = Unit
+    override fun start(snapshot: LiveActivitySnapshot): Boolean = false
+    override fun update(snapshot: LiveActivitySnapshot): Boolean = false
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean = false
 }
 
 object NoopHapticFeedbackController : HapticFeedbackController {

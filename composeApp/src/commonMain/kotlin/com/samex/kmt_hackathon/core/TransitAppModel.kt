@@ -82,6 +82,7 @@ class TransitAppModel(
 ) {
     private val engine = WatchEngine(transitRepository)
     private var lastLiveSnapshot: LiveActivitySnapshot? = null
+    private var pendingLiveActivityEndReason: LiveActivityEndReason? = null
     private val autoStartSuppressedCommuteIds = mutableSetOf<String>()
     private var debugClockOffsetSeconds: Int = 0
     private var forceLiveActivityClockSync: Boolean = false
@@ -645,6 +646,7 @@ class TransitAppModel(
         activeGroups = groups
         notificationScheduler.cancelAll()
         scheduleNotificationsForSession(session, groups)
+        syncLiveActivity(forceClockSync = true)
         errorMessage = if (groups.isEmpty()) "No upcoming departures found." else null
     }
 
@@ -804,8 +806,10 @@ class TransitAppModel(
             status = status,
             walkingMinutes = walking,
         ).withCurrentClock()
-        liveActivityController.start(snapshot)
-        lastLiveSnapshot = snapshot
+        if (liveActivityController.start(snapshot)) {
+            lastLiveSnapshot = snapshot
+            pendingLiveActivityEndReason = null
+        }
     }
 
     private fun syncLiveActivity(
@@ -815,23 +819,33 @@ class TransitAppModel(
         if (!liveActivityController.isSupported()) return
         val snapshot = currentLiveSnapshot()
         val shouldForceClockSync = forceClockSync || forceLiveActivityClockSync
+        val pendingEndReason = pendingLiveActivityEndReason
         when {
-            snapshot == null && lastLiveSnapshot != null -> {
-                liveActivityController.end(
+            snapshot == null && (lastLiveSnapshot != null || liveActivityController.isActivityRunning()) -> {
+                val reason = pendingEndReason ?: skippedFallbackReason ?: LiveActivityEndReason.SessionEnded
+                if (liveActivityController.end(
                     snapshot = lastLiveSnapshot,
-                    reason = skippedFallbackReason ?: LiveActivityEndReason.SessionEnded,
-                )
-                lastLiveSnapshot = null
+                    reason = reason,
+                )) {
+                    lastLiveSnapshot = null
+                    pendingLiveActivityEndReason = null
+                } else {
+                    pendingLiveActivityEndReason = reason
+                }
             }
-            snapshot != null && lastLiveSnapshot == null -> {
+            snapshot != null && (lastLiveSnapshot == null || !liveActivityController.isActivityRunning()) -> {
                 val syncedSnapshot = snapshot.withCurrentClock()
-                liveActivityController.start(syncedSnapshot)
-                lastLiveSnapshot = syncedSnapshot
+                if (liveActivityController.start(syncedSnapshot)) {
+                    lastLiveSnapshot = syncedSnapshot
+                    pendingLiveActivityEndReason = null
+                }
             }
             snapshot != null && (shouldForceClockSync || !snapshot.sameLiveContentAs(lastLiveSnapshot)) -> {
                 val syncedSnapshot = snapshot.withCurrentClock()
-                liveActivityController.update(syncedSnapshot)
-                lastLiveSnapshot = syncedSnapshot
+                if (liveActivityController.update(syncedSnapshot)) {
+                    lastLiveSnapshot = syncedSnapshot
+                    pendingLiveActivityEndReason = null
+                }
             }
         }
         forceLiveActivityClockSync = false
@@ -844,8 +858,12 @@ class TransitAppModel(
         if (!liveActivityController.isSupported()) return
         val snapshot = snapshotOverride ?: lastLiveSnapshot
         if (snapshot == null && !liveActivityController.isActivityRunning()) return
-        liveActivityController.end(snapshot = snapshot, reason = reason)
-        lastLiveSnapshot = null
+        if (liveActivityController.end(snapshot = snapshot, reason = reason)) {
+            lastLiveSnapshot = null
+            pendingLiveActivityEndReason = null
+        } else {
+            pendingLiveActivityEndReason = reason
+        }
     }
 
     private fun reconcileLiveActivityOnLoad(restored: Boolean) {
@@ -854,17 +872,24 @@ class TransitAppModel(
             val snapshot = currentLiveSnapshot()
             if (snapshot != null) {
                 val syncedSnapshot = snapshot.withCurrentClock()
-                if (liveActivityController.isActivityRunning()) {
+                val synced = if (liveActivityController.isActivityRunning()) {
                     liveActivityController.update(syncedSnapshot)
                 } else {
                     liveActivityController.start(syncedSnapshot)
                 }
-                lastLiveSnapshot = syncedSnapshot
+                if (synced) {
+                    lastLiveSnapshot = syncedSnapshot
+                    pendingLiveActivityEndReason = null
+                }
             } else if (liveActivityController.isActivityRunning()) {
-                liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
+                if (!liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)) {
+                    pendingLiveActivityEndReason = LiveActivityEndReason.SessionEnded
+                }
             }
         } else if (liveActivityController.isActivityRunning()) {
-            liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
+            if (!liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)) {
+                pendingLiveActivityEndReason = LiveActivityEndReason.SessionEnded
+            }
         }
     }
 

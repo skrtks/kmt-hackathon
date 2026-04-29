@@ -380,15 +380,13 @@ internal class AndroidLiveActivityController(
     override fun isActivityRunning(): Boolean =
         preferences.getBoolean(KEY_LIVE_ACTIVITY_RUNNING, false)
 
-    override fun start(snapshot: LiveActivitySnapshot) {
+    override fun start(snapshot: LiveActivitySnapshot): Boolean =
         post(snapshot)
-    }
 
-    override fun update(snapshot: LiveActivitySnapshot) {
+    override fun update(snapshot: LiveActivitySnapshot): Boolean =
         post(snapshot)
-    }
 
-    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean {
         if (reason == LiveActivityEndReason.Leaving && snapshot != null) {
             post(snapshot.copy(isLeaving = true))
             return
@@ -401,18 +399,17 @@ internal class AndroidLiveActivityController(
             .remove(KEY_LIVE_ACTIVITY_GROUP_ID)
             .apply()
         clearWearLiveActivity(context)
+        return true
     }
 
-    private fun post(snapshot: LiveActivitySnapshot) {
+    private fun post(snapshot: LiveActivitySnapshot): Boolean {
         syncWearLiveActivity(context, snapshot)
         preferences.edit()
             .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
             .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
             .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
             .apply()
-        scheduleCountdownRefresh(snapshot)
-        if (!canPostNotifications(context)) return
-
+        scheduleCountdownRefresh(snapshot)if (!canPostNotifications(context)) return false
         createLiveActivityChannel(context)
         val pendingIntent = launchPendingIntent(context)
         val progress = liveActivityProgress(snapshot)
@@ -441,8 +438,17 @@ internal class AndroidLiveActivityController(
 
         try {
             NotificationManagerCompat.from(context).notify(LIVE_ACTIVITY_NOTIFICATION_ID, notificationBuilder.build())
+            preferences.edit()
+                .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
+                .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
+                .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
+                .apply()
+            syncWearLiveActivity(context, snapshot)
+            scheduleCountdownRefresh(snapshot)
+            return true
         } catch (_: SecurityException) {
             // Permission can be revoked between the explicit check and notify().
+            return false
         }
     }
 

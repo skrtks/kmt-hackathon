@@ -78,15 +78,92 @@ class TransitAppModelTest {
         repository.save(testUserData(activeSession = null))
         val model = model(
             repository = repository,
-            now = 8 * 60 + 20,
+            now = 8 * 60 + 26,
             liveActivityController = liveActivityController,
         )
+
+        model.load()
+        model.startWatch("commute")
+        model.markLeaving()
+        val startsAfterLeaving = liveActivityController.starts.size
+
+        model.tick()
+
+        assertEquals(1, startsAfterLeaving)
+        assertEquals(1, liveActivityController.starts.size)
+        assertEquals(listOf(LiveActivityEndReason.Leaving), liveActivityController.ends.map { it.second })
+    }
+
+    @Test
+    fun updateColorThemePersistsSelection() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60 + 20)
 
         model.load()
         model.updateColorTheme(AppColorTheme.Berry)
 
         assertEquals(AppColorTheme.Berry, model.userData.settings.colorTheme)
         assertEquals(AppColorTheme.Berry, repository.load().settings.colorTheme)
+    }
+
+    @Test
+    fun failedLiveActivityStartRetriesOnTick() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val liveActivityController = RecordingLiveActivityController(startSucceeds = false)
+        repository.save(testUserData(activeSession = null))
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            liveActivityController = liveActivityController,
+        )
+
+        model.load()
+        model.startWatch("commute")
+        model.tick()
+
+        assertEquals(2, liveActivityController.starts.size)
+    }
+
+    @Test
+    fun launchWithoutActiveSessionEndsRunningLiveActivity() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val liveActivityController = RecordingLiveActivityController(initialRunning = true)
+        repository.save(testUserData(activeSession = null))
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            liveActivityController = liveActivityController,
+        )
+
+        model.load()
+
+        assertEquals(1, liveActivityController.ends.size)
+        assertEquals(null, liveActivityController.ends.single().first)
+        assertEquals(LiveActivityEndReason.SessionEnded, liveActivityController.ends.single().second)
+    }
+
+    @Test
+    fun skippingOnlyLiveActivityGroupEndsWithSkippedReason() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val liveActivityController = RecordingLiveActivityController()
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            liveActivityController = liveActivityController,
+        )
+
+        model.load()
+        model.skipCurrentGroup()
+
+        assertEquals(1, liveActivityController.starts.size)
+        assertEquals(1, liveActivityController.ends.size)
+        assertEquals(LiveActivityEndReason.Skipped, liveActivityController.ends.single().second)
     }
 
     @Test
@@ -302,8 +379,14 @@ class TransitAppModelTest {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
         val scheduler = FakeModelNotificationScheduler()
+        val liveActivityController = RecordingLiveActivityController()
         repository.save(testUserData(startedAutomatically = false))
-        val model = model(repository, now = 8 * 60 + 20, notificationScheduler = scheduler)
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            notificationScheduler = scheduler,
+            liveActivityController = liveActivityController,
+        )
 
         model.load()
         model.beginCommuteEdit("commute")
@@ -320,6 +403,8 @@ class TransitAppModelTest {
         assertEquals(8 * 60 + 27, model.activeGroups.first().finalCallMinutes)
         assertEquals(listOf(NotificationKind.WindowOpen, NotificationKind.FinalCall), scheduler.scheduled.map { it.kind })
         assertEquals(listOf(8 * 60 + 24, 8 * 60 + 27), scheduler.scheduled.map { it.fireAtMinutes })
+        assertEquals(8 * 60 + 24, liveActivityController.updates.last().windowOpenMinutes)
+        assertEquals(8 * 60 + 27, liveActivityController.updates.last().finalCallMinutes)
     }
 
     @Test
@@ -482,28 +567,39 @@ private class FakeModelNotificationScheduler : NotificationScheduler {
 
 private class RecordingLiveActivityController(
     private val supported: Boolean = true,
+    private val startSucceeds: Boolean = true,
+    private val updateSucceeds: Boolean = true,
+    private val endSucceeds: Boolean = true,
+    initialRunning: Boolean = false,
 ) : LiveActivityController {
     val starts = mutableListOf<LiveActivitySnapshot>()
     val updates = mutableListOf<LiveActivitySnapshot>()
     val ends = mutableListOf<Pair<LiveActivitySnapshot?, LiveActivityEndReason>>()
-    private var running = false
+    private var running = initialRunning
 
     override fun isSupported(): Boolean = supported
 
     override fun isActivityRunning(): Boolean = running
 
-    override fun start(snapshot: LiveActivitySnapshot) {
+    override fun start(snapshot: LiveActivitySnapshot): Boolean {
         starts += snapshot
-        running = true
+        if (startSucceeds) {
+            running = true
+        }
+        return startSucceeds
     }
 
-    override fun update(snapshot: LiveActivitySnapshot) {
+    override fun update(snapshot: LiveActivitySnapshot): Boolean {
         updates += snapshot
+        return updateSucceeds
     }
 
-    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+    override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason): Boolean {
         ends += snapshot to reason
-        running = false
+        if (endSucceeds) {
+            running = false
+        }
+        return endSucceeds
     }
 }
 
