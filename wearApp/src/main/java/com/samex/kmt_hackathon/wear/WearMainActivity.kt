@@ -168,14 +168,16 @@ private fun WearApp(syncState: WearSyncState, snapshot: LiveActivitySnapshot?) {
                 .background(Color.Black),
         ) {
             if (snapshot != null) {
-                WaterCountdownBackground(
-                    snapshot = snapshot,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                FinalCallPulseRing(
-                    status = snapshot.status,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (!snapshot.isLeaving) {
+                    WaterCountdownBackground(
+                        snapshot = snapshot,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    FinalCallPulseRing(
+                        status = snapshot.status,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 WearActiveWatchScreen(
                     snapshot = snapshot,
                     modifier = Modifier.fillMaxSize(),
@@ -312,10 +314,15 @@ private fun WaterCountdownBackground(
 @Composable
 private fun rememberCurrentSecondsOfDay(snapshot: LiveActivitySnapshot): MutableState<Int> {
     val baseSeconds = snapshot.syncedNowSecondsOfDay ?: currentSecondsOfDay()
-    val nowSecondsOfDay = remember(snapshot.commuteId, snapshot.groupId, snapshot.syncedNowSecondsOfDay) {
+    val nowSecondsOfDay = remember(
+        snapshot.commuteId,
+        snapshot.groupId,
+        snapshot.isLeaving,
+        snapshot.syncedNowSecondsOfDay,
+    ) {
         mutableStateOf(baseSeconds)
     }
-    LaunchedEffect(snapshot.commuteId, snapshot.groupId, snapshot.syncedNowSecondsOfDay) {
+    LaunchedEffect(snapshot.commuteId, snapshot.groupId, snapshot.isLeaving, snapshot.syncedNowSecondsOfDay) {
         val startedAtRealtimeMillis = SystemClock.elapsedRealtime()
         val startedAtSeconds = baseSeconds
         while (true) {
@@ -332,6 +339,7 @@ private fun WearActiveWatchScreen(
     snapshot: LiveActivitySnapshot,
     modifier: Modifier = Modifier,
 ) {
+    var nowSecondsOfDay by rememberCurrentSecondsOfDay(snapshot)
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -340,7 +348,7 @@ private fun WearActiveWatchScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = headlineFor(snapshot),
+            text = headlineFor(snapshot, nowSecondsOfDay),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.displayMedium,
@@ -370,12 +378,14 @@ private fun WearActiveWatchScreen(
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(14.dp))
-        Text(
-            text = "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}",
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.titleSmall,
-            color = statusAccent(snapshot.status),
-        )
+        if (!snapshot.isLeaving && snapshot.status != WatchStatus.FinalCall) {
+            Text(
+                text = "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleSmall,
+                color = statusAccent(snapshot.status),
+            )
+        }
         Text(
             text = "Departure ${formatMinutesOfDay(snapshot.departureTimeMinutes)}",
             textAlign = TextAlign.Center,
@@ -385,8 +395,10 @@ private fun WearActiveWatchScreen(
     }
 }
 
-private fun headlineFor(snapshot: LiveActivitySnapshot): String =
-    when (snapshot.status) {
+private fun headlineFor(snapshot: LiveActivitySnapshot, nowSecondsOfDay: Int): String =
+    if (snapshot.isLeaving) {
+        "Departure in ${formatDepartureCountdown(snapshot.departureTimeMinutes, nowSecondsOfDay)}"
+    } else when (snapshot.status) {
         WatchStatus.GetReady -> "Leave at ${formatMinutesOfDay(snapshot.windowOpenMinutes)}"
         WatchStatus.LeaveNow -> "Leave now"
         WatchStatus.FinalCall -> "Final call"
@@ -430,6 +442,19 @@ private fun secondsBetween(startSeconds: Int, endSeconds: Int): Int {
     return if (raw < 0) raw + SECONDS_PER_DAY else raw
 }
 
+private fun formatDepartureCountdown(departureTimeMinutes: Int, nowSecondsOfDay: Int): String {
+    val departureSeconds = departureTimeMinutes * SECONDS_PER_MINUTE
+    val remainingSeconds = (departureSeconds - nowSecondsOfDay).coerceAtLeast(0)
+    val hours = remainingSeconds / (MINUTES_PER_HOUR * SECONDS_PER_MINUTE)
+    val minutes = (remainingSeconds % (MINUTES_PER_HOUR * SECONDS_PER_MINUTE)) / SECONDS_PER_MINUTE
+    val seconds = remainingSeconds % SECONDS_PER_MINUTE
+    return if (hours > 0) {
+        "${hours}h ${minutes.toString().padStart(2, '0')}m"
+    } else {
+        "$minutes:${seconds.toString().padStart(2, '0')}"
+    }
+}
+
 private fun elapsedSecondsInWindow(startSeconds: Int, endSeconds: Int, nowSeconds: Int): Int {
     val totalSeconds = secondsBetween(startSeconds, endSeconds).coerceAtLeast(1)
     val elapsedSeconds = secondsBetween(startSeconds, nowSeconds)
@@ -464,6 +489,7 @@ private const val KEY_WEAR_DEPARTURE_TIME_MINUTES = "departure_time_minutes"
 private const val KEY_WEAR_WINDOW_OPEN_MINUTES = "window_open_minutes"
 private const val KEY_WEAR_FINAL_CALL_MINUTES = "final_call_minutes"
 private const val KEY_WEAR_WALKING_MINUTES = "walking_minutes"
+private const val KEY_WEAR_IS_LEAVING = "is_leaving"
 private const val KEY_WEAR_SYNCED_NOW_SECONDS = "synced_now_seconds"
 
 internal fun DataMap.isWearLiveActivityActive(): Boolean =
@@ -486,6 +512,7 @@ internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
         windowOpenMinutes = getInt(KEY_WEAR_WINDOW_OPEN_MINUTES),
         finalCallMinutes = getInt(KEY_WEAR_FINAL_CALL_MINUTES),
         walkingMinutes = getInt(KEY_WEAR_WALKING_MINUTES),
+        isLeaving = getBoolean(KEY_WEAR_IS_LEAVING, false),
         syncedNowSecondsOfDay = getOptionalInt(KEY_WEAR_SYNCED_NOW_SECONDS),
     )
 }

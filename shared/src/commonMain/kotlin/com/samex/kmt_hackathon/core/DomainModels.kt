@@ -179,6 +179,7 @@ data class LiveActivitySnapshot(
     val windowOpenMinutes: Int,
     val finalCallMinutes: Int,
     val walkingMinutes: Int,
+    val isLeaving: Boolean = false,
     val syncedNowSecondsOfDay: Int? = null,
 )
 

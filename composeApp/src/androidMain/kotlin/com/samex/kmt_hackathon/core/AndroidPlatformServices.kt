@@ -375,7 +375,7 @@ internal class AndroidLiveActivityController(
 ) : LiveActivityController {
     private val preferences = context.getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
 
-    override fun isSupported(): Boolean = canPostNotifications(context)
+    override fun isSupported(): Boolean = true
 
     override fun isActivityRunning(): Boolean =
         preferences.getBoolean(KEY_LIVE_ACTIVITY_RUNNING, false)
@@ -389,6 +389,10 @@ internal class AndroidLiveActivityController(
     }
 
     override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) {
+        if (reason == LiveActivityEndReason.Leaving && snapshot != null) {
+            post(snapshot.copy(isLeaving = true))
+            return
+        }
         cancelCountdownRefresh()
         NotificationManagerCompat.from(context).cancel(LIVE_ACTIVITY_NOTIFICATION_ID)
         preferences.edit()
@@ -400,10 +404,19 @@ internal class AndroidLiveActivityController(
     }
 
     private fun post(snapshot: LiveActivitySnapshot) {
+        syncWearLiveActivity(context, snapshot)
+        preferences.edit()
+            .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
+            .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
+            .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
+            .apply()
+        scheduleCountdownRefresh(snapshot)
         if (!canPostNotifications(context)) return
+
         createLiveActivityChannel(context)
         val pendingIntent = launchPendingIntent(context)
         val progress = liveActivityProgress(snapshot)
+        val targetMinutes = liveActivityCountdownTargetMinutes(snapshot)
         val notificationBuilder = NotificationCompat.Builder(context, LIVE_ACTIVITY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_transit_ongoing)
             .setColor(0xFF0F766E.toInt())
@@ -417,9 +430,9 @@ internal class AndroidLiveActivityController(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setRequestPromotedOngoing(true)
-            .setShortCriticalText(formatMinutesOfDay(snapshot.finalCallMinutes))
+            .setShortCriticalText(formatMinutesOfDay(targetMinutes))
             .setSilent(true)
-            .setWhen(targetMillis(snapshot.finalCallMinutes))
+            .setWhen(targetMillis(targetMinutes))
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
             .setProgress(progress.max, progress.value, false)
@@ -428,13 +441,6 @@ internal class AndroidLiveActivityController(
 
         try {
             NotificationManagerCompat.from(context).notify(LIVE_ACTIVITY_NOTIFICATION_ID, notificationBuilder.build())
-            preferences.edit()
-                .putBoolean(KEY_LIVE_ACTIVITY_RUNNING, true)
-                .putString(KEY_LIVE_ACTIVITY_COMMUTE_ID, snapshot.commuteId)
-                .putString(KEY_LIVE_ACTIVITY_GROUP_ID, snapshot.groupId)
-                .apply()
-            syncWearLiveActivity(context, snapshot)
-            scheduleCountdownRefresh(snapshot)
         } catch (_: SecurityException) {
             // Permission can be revoked between the explicit check and notify().
         }
@@ -442,7 +448,7 @@ internal class AndroidLiveActivityController(
 
     private fun scheduleCountdownRefresh(snapshot: LiveActivitySnapshot) {
         cancelCountdownRefresh()
-        val remainingMillis = remainingMillisUntil(snapshot.finalCallMinutes)
+        val remainingMillis = remainingMillisUntil(liveActivityCountdownTargetMinutes(snapshot))
         val delayMillis = when {
             remainingMillis > 60_000L -> 60_000L.coerceAtMost(remainingMillis - 59_999L)
             remainingMillis > 0L -> 1_000L.coerceAtMost(remainingMillis)
@@ -503,6 +509,7 @@ private const val KEY_WEAR_DEPARTURE_TIME_MINUTES = "departure_time_minutes"
 private const val KEY_WEAR_WINDOW_OPEN_MINUTES = "window_open_minutes"
 private const val KEY_WEAR_FINAL_CALL_MINUTES = "final_call_minutes"
 private const val KEY_WEAR_WALKING_MINUTES = "walking_minutes"
+private const val KEY_WEAR_IS_LEAVING = "is_leaving"
 private const val KEY_WEAR_SYNCED_NOW_SECONDS = "synced_now_seconds"
 
 private fun createChannel(context: Context) {
@@ -558,15 +565,29 @@ private data class LiveActivityProgress(
     val remainingText: String,
 )
 
+private fun liveActivityCountdownTargetMinutes(snapshot: LiveActivitySnapshot): Int =
+    if (snapshot.isLeaving) snapshot.departureTimeMinutes else snapshot.finalCallMinutes
+
+private fun liveActivityRemainingText(snapshot: LiveActivitySnapshot): String =
+    if (snapshot.isLeaving) {
+        "Departure in ${remainingDurationText(snapshot.departureTimeMinutes)}"
+    } else {
+        remainingTimeText(snapshot.finalCallMinutes)
+    }
+
 private fun liveActivityContentText(snapshot: LiveActivitySnapshot, remainingText: String): String =
     "$remainingText - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}"
 
 private fun liveActivityBigText(snapshot: LiveActivitySnapshot): String =
     listOf(
-        remainingTimeText(snapshot.finalCallMinutes),
+        liveActivityRemainingText(snapshot),
         snapshot.body,
         "${snapshot.stopName} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}",
-        "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}",
+        if (snapshot.isLeaving) {
+            "Departure ${formatMinutesOfDay(snapshot.departureTimeMinutes)}"
+        } else {
+            "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}"
+        },
     ).joinToString("\n")
 
 private fun syncWearLiveActivity(context: Context, snapshot: LiveActivitySnapshot) {
@@ -601,6 +622,7 @@ private fun DataMap.putLiveActivitySnapshot(snapshot: LiveActivitySnapshot) {
     putInt(KEY_WEAR_WINDOW_OPEN_MINUTES, snapshot.windowOpenMinutes)
     putInt(KEY_WEAR_FINAL_CALL_MINUTES, snapshot.finalCallMinutes)
     putInt(KEY_WEAR_WALKING_MINUTES, snapshot.walkingMinutes)
+    putBoolean(KEY_WEAR_IS_LEAVING, snapshot.isLeaving)
     snapshot.syncedNowSecondsOfDay?.let { putInt(KEY_WEAR_SYNCED_NOW_SECONDS, it) }
 }
 
@@ -621,6 +643,7 @@ internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
         windowOpenMinutes = getInt(KEY_WEAR_WINDOW_OPEN_MINUTES),
         finalCallMinutes = getInt(KEY_WEAR_FINAL_CALL_MINUTES),
         walkingMinutes = getInt(KEY_WEAR_WALKING_MINUTES),
+        isLeaving = getBoolean(KEY_WEAR_IS_LEAVING, false),
         syncedNowSecondsOfDay = getOptionalInt(KEY_WEAR_SYNCED_NOW_SECONDS),
     )
 }
@@ -639,7 +662,7 @@ private fun applyWearOngoingActivity(
 ) {
     val status = Status.Builder()
         .addTemplate("#remaining#")
-        .addPart("remaining", Status.TextPart(remainingTimeText(snapshot.finalCallMinutes)))
+        .addPart("remaining", Status.TextPart(liveActivityRemainingText(snapshot)))
         .build()
     OngoingActivity.Builder(context, LIVE_ACTIVITY_NOTIFICATION_ID, notificationBuilder)
         .setStaticIcon(R.drawable.ic_transit_ongoing)
@@ -651,8 +674,9 @@ private fun applyWearOngoingActivity(
 }
 
 private fun liveActivityProgress(snapshot: LiveActivitySnapshot): LiveActivityProgress {
-    val totalMillis = leaveWindowDurationMillis(snapshot)
-    val remainingMillis = remainingMillisUntil(snapshot.finalCallMinutes).coerceAtMost(totalMillis)
+    val totalMillis = liveActivityProgressDurationMillis(snapshot)
+    val targetMinutes = liveActivityCountdownTargetMinutes(snapshot)
+    val remainingMillis = remainingMillisUntil(targetMinutes).coerceAtMost(totalMillis)
     val elapsedMillis = (totalMillis - remainingMillis).coerceIn(0L, totalMillis)
     val value = ((elapsedMillis * LIVE_ACTIVITY_PROGRESS_MAX) / totalMillis)
         .toInt()
@@ -660,12 +684,15 @@ private fun liveActivityProgress(snapshot: LiveActivitySnapshot): LiveActivityPr
     return LiveActivityProgress(
         max = LIVE_ACTIVITY_PROGRESS_MAX,
         value = value,
-        remainingText = remainingTimeText(snapshot.finalCallMinutes),
+        remainingText = liveActivityRemainingText(snapshot),
     )
 }
 
-private fun leaveWindowDurationMillis(snapshot: LiveActivitySnapshot): Long {
-    val durationMinutes = minutesBetween(snapshot.windowOpenMinutes, snapshot.finalCallMinutes).coerceAtLeast(1)
+private fun liveActivityProgressDurationMillis(snapshot: LiveActivitySnapshot): Long {
+    val durationMinutes = minutesBetween(
+        startMinutes = snapshot.windowOpenMinutes,
+        endMinutes = liveActivityCountdownTargetMinutes(snapshot),
+    ).coerceAtLeast(1)
     return durationMinutes * 60_000L
 }
 
@@ -674,18 +701,21 @@ private fun minutesBetween(startMinutes: Int, endMinutes: Int): Int {
     return if (raw < 0) raw + MINUTES_PER_DAY else raw
 }
 
-private fun remainingTimeText(minutesOfDay: Int): String {
+private fun remainingDurationText(minutesOfDay: Int): String {
     val remainingMillis = remainingMillisUntil(minutesOfDay)
     if (remainingMillis < 60_000L) {
         val remainingSeconds = if (remainingMillis == 0L) 0L else (remainingMillis / 1_000L).coerceAtLeast(1L)
         val unit = if (remainingSeconds == 1L) "second" else "seconds"
-        return "$remainingSeconds $unit left"
+        return "$remainingSeconds $unit"
     }
 
     val remainingMinutes = ((remainingMillis + 59_999L) / 60_000L).coerceAtLeast(0L)
     val unit = if (remainingMinutes == 1L) "minute" else "minutes"
-    return "$remainingMinutes $unit left"
+    return "$remainingMinutes $unit"
 }
+
+private fun remainingTimeText(minutesOfDay: Int): String =
+    "${remainingDurationText(minutesOfDay)} left"
 
 private fun remainingMillisUntil(minutesOfDay: Int): Long =
     (targetMillis(minutesOfDay) - System.currentTimeMillis()).coerceAtLeast(0L)

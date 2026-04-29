@@ -524,8 +524,15 @@ class TransitAppModel(
     fun markLeaving() {
         val session = userData.activeSession ?: return
         updateClock()
-        val group = watchUiState()?.currentGroup ?: return
+        val state = watchUiState() ?: return
+        val group = state.currentGroup ?: return
         val departureTimeMinutes = group.primaryWindow.departureTimeMinutes
+        val leavingSnapshot = engine.liveActivitySnapshot(
+            commuteId = session.commuteId,
+            group = group,
+            status = state.currentStatus ?: engine.statusFor(group, nowMinutes),
+            walkingMinutes = state.walkingTimeMinutes,
+        ).copy(isLeaving = true).withCurrentClock()
         notificationScheduler.cancelAll()
         updateUserData(
             userData.copy(
@@ -537,7 +544,7 @@ class TransitAppModel(
                 ),
             ),
         )
-        endLiveActivity(LiveActivityEndReason.Leaving)
+        endLiveActivity(LiveActivityEndReason.Leaving, snapshotOverride = leavingSnapshot)
     }
 
     fun stops(): List<TransitStop> = transitRepository.stops()
@@ -830,10 +837,14 @@ class TransitAppModel(
         forceLiveActivityClockSync = false
     }
 
-    private fun endLiveActivity(reason: LiveActivityEndReason) {
+    private fun endLiveActivity(
+        reason: LiveActivityEndReason,
+        snapshotOverride: LiveActivitySnapshot? = null,
+    ) {
         if (!liveActivityController.isSupported()) return
-        if (lastLiveSnapshot == null && !liveActivityController.isActivityRunning()) return
-        liveActivityController.end(snapshot = lastLiveSnapshot, reason = reason)
+        val snapshot = snapshotOverride ?: lastLiveSnapshot
+        if (snapshot == null && !liveActivityController.isActivityRunning()) return
+        liveActivityController.end(snapshot = snapshot, reason = reason)
         lastLiveSnapshot = null
     }
 

@@ -29,14 +29,16 @@ internal fun postWearOngoingActivity(context: Context, snapshot: LiveActivitySna
 
     createWearOngoingChannel(context)
     val pendingIntent = launchWearAppPendingIntent(context)
+    val statusText = ongoingStatusText(snapshot)
+    val targetMinutes = ongoingCountdownTargetMinutes(snapshot)
     val status = Status.Builder()
         .addTemplate("#remaining#")
-        .addPart("remaining", Status.TextPart(remainingTimeText(snapshot.finalCallMinutes)))
+        .addPart("remaining", Status.TextPart(statusText))
         .build()
     val notificationBuilder = NotificationCompat.Builder(context, WEAR_ONGOING_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_transit_ongoing)
         .setColor(0xFF0F766E.toInt())
-        .setContentTitle(snapshot.title.ifBlank { "Active watch" })
+        .setContentTitle(ongoingTitle(snapshot, statusText))
         .setContentText(ongoingContentText(snapshot))
         .setStyle(NotificationCompat.BigTextStyle().bigText(ongoingBigText(snapshot)))
         .setContentIntent(pendingIntent)
@@ -46,17 +48,17 @@ internal fun postWearOngoingActivity(context: Context, snapshot: LiveActivitySna
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setRequestPromotedOngoing(true)
-        .setShortCriticalText(formatMinutesOfDay(snapshot.finalCallMinutes))
+        .setShortCriticalText(formatMinutesOfDay(targetMinutes))
         .setSilent(true)
         .setLocalOnly(true)
-        .setWhen(targetMillis(snapshot.finalCallMinutes))
+        .setWhen(targetMillis(targetMinutes))
         .setUsesChronometer(true)
         .setChronometerCountDown(true)
 
     OngoingActivity.Builder(context, WEAR_ONGOING_NOTIFICATION_ID, notificationBuilder)
         .setStaticIcon(R.drawable.ic_transit_ongoing)
         .setTouchIntent(pendingIntent)
-        .setTitle(snapshot.title.ifBlank { "Active watch" })
+        .setTitle(ongoingTitle(snapshot, statusText))
         .setStatus(status)
         .build()
         .apply(context)
@@ -94,29 +96,49 @@ private fun launchWearAppPendingIntent(context: Context): PendingIntent {
     )
 }
 
+private fun ongoingCountdownTargetMinutes(snapshot: LiveActivitySnapshot): Int =
+    if (snapshot.isLeaving) snapshot.departureTimeMinutes else snapshot.finalCallMinutes
+
+private fun ongoingStatusText(snapshot: LiveActivitySnapshot): String =
+    if (snapshot.isLeaving) {
+        "Departure in ${remainingDurationText(snapshot.departureTimeMinutes)}"
+    } else {
+        remainingTimeText(snapshot.finalCallMinutes)
+    }
+
+private fun ongoingTitle(snapshot: LiveActivitySnapshot, statusText: String): String =
+    if (snapshot.isLeaving) statusText else snapshot.title.ifBlank { "Active watch" }
+
 private fun ongoingContentText(snapshot: LiveActivitySnapshot): String =
-    "${remainingTimeText(snapshot.finalCallMinutes)} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}"
+    "${ongoingStatusText(snapshot)} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}"
 
 private fun ongoingBigText(snapshot: LiveActivitySnapshot): String =
     listOf(
-        remainingTimeText(snapshot.finalCallMinutes),
+        ongoingStatusText(snapshot),
         snapshot.body,
         "${snapshot.stopName} - ${snapshot.lineLabel} to ${snapshot.directionHeadsign}",
-        "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}",
+        if (snapshot.isLeaving) {
+            "Departure ${formatMinutesOfDay(snapshot.departureTimeMinutes)}"
+        } else {
+            "Leave by ${formatMinutesOfDay(snapshot.finalCallMinutes)}"
+        },
     ).joinToString("\n")
 
-private fun remainingTimeText(minutesOfDay: Int): String {
+private fun remainingDurationText(minutesOfDay: Int): String {
     val remainingMillis = remainingMillisUntil(minutesOfDay)
     if (remainingMillis < 60_000L) {
         val remainingSeconds = if (remainingMillis == 0L) 0L else (remainingMillis / 1_000L).coerceAtLeast(1L)
         val unit = if (remainingSeconds == 1L) "second" else "seconds"
-        return "$remainingSeconds $unit left"
+        return "$remainingSeconds $unit"
     }
 
     val remainingMinutes = ((remainingMillis + 59_999L) / 60_000L).coerceAtLeast(0L)
     val unit = if (remainingMinutes == 1L) "minute" else "minutes"
-    return "$remainingMinutes $unit left"
+    return "$remainingMinutes $unit"
 }
+
+private fun remainingTimeText(minutesOfDay: Int): String =
+    "${remainingDurationText(minutesOfDay)} left"
 
 private fun remainingMillisUntil(minutesOfDay: Int): Long =
     (targetMillis(minutesOfDay) - System.currentTimeMillis()).coerceAtLeast(0L)

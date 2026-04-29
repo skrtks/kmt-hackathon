@@ -343,7 +343,8 @@ class TransitAppModelTest {
         val repository = UserDataRepository(store)
         val timeProvider = MutableModelTimeProvider(now = 8 * 60 + 26, weekday = Weekday.Monday)
         repository.save(testUserData(startedAutomatically = false))
-        val model = model(repository, timeProvider)
+        val liveActivityController = RecordingLiveActivityController()
+        val model = model(repository, timeProvider, liveActivityController = liveActivityController)
 
         model.load()
         model.markLeaving()
@@ -351,6 +352,9 @@ class TransitAppModelTest {
         assertEquals(true, model.userData.activeSession?.silenced)
         assertEquals(8 * 60 + 30, model.userData.activeSession?.leavingDepartureTimeMinutes)
         assertEquals(model.activeGroups.first().id, model.userData.activeSession?.leavingGroupId)
+        assertEquals(LiveActivityEndReason.Leaving, liveActivityController.ends.last().second)
+        assertEquals(true, liveActivityController.ends.last().first?.isLeaving)
+        assertEquals(8 * 60 + 30, liveActivityController.ends.last().first?.departureTimeMinutes)
 
         timeProvider.now = 8 * 60 + 29
         model.tick()
