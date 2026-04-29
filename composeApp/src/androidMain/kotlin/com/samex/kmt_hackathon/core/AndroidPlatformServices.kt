@@ -503,6 +503,7 @@ private const val KEY_WEAR_DEPARTURE_TIME_MINUTES = "departure_time_minutes"
 private const val KEY_WEAR_WINDOW_OPEN_MINUTES = "window_open_minutes"
 private const val KEY_WEAR_FINAL_CALL_MINUTES = "final_call_minutes"
 private const val KEY_WEAR_WALKING_MINUTES = "walking_minutes"
+private const val KEY_WEAR_SYNCED_NOW_SECONDS = "synced_now_seconds"
 
 private fun createChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -600,6 +601,7 @@ private fun DataMap.putLiveActivitySnapshot(snapshot: LiveActivitySnapshot) {
     putInt(KEY_WEAR_WINDOW_OPEN_MINUTES, snapshot.windowOpenMinutes)
     putInt(KEY_WEAR_FINAL_CALL_MINUTES, snapshot.finalCallMinutes)
     putInt(KEY_WEAR_WALKING_MINUTES, snapshot.walkingMinutes)
+    snapshot.syncedNowSecondsOfDay?.let { putInt(KEY_WEAR_SYNCED_NOW_SECONDS, it) }
 }
 
 internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
@@ -619,11 +621,15 @@ internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
         windowOpenMinutes = getInt(KEY_WEAR_WINDOW_OPEN_MINUTES),
         finalCallMinutes = getInt(KEY_WEAR_FINAL_CALL_MINUTES),
         walkingMinutes = getInt(KEY_WEAR_WALKING_MINUTES),
+        syncedNowSecondsOfDay = getOptionalInt(KEY_WEAR_SYNCED_NOW_SECONDS),
     )
 }
 
 internal fun isWearLiveActivityActive(dataMap: DataMap): Boolean =
     dataMap.getBoolean(KEY_WEAR_ACTIVE, false)
+
+private fun DataMap.getOptionalInt(key: String): Int? =
+    if (containsKey(key)) getInt(key) else null
 
 private fun applyWearOngoingActivity(
     context: Context,

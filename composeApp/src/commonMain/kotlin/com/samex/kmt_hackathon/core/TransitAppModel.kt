@@ -64,6 +64,9 @@ data class WatchUiState(
     val errorMessage: String?,
 )
 
+private const val SECONDS_PER_DAY = MINUTES_PER_DAY * 60
+private const val DEBUG_SKIP_LEAD_SECONDS = 5
+
 class TransitAppModel(
     private val transitRepository: TransitRepository,
     private val userDataRepository: UserDataRepository,
@@ -74,6 +77,8 @@ class TransitAppModel(
     private val engine = WatchEngine(transitRepository)
     private var lastLiveSnapshot: LiveActivitySnapshot? = null
     private val autoStartSuppressedCommuteIds = mutableSetOf<String>()
+    private var debugClockOffsetSeconds: Int = 0
+    private var forceLiveActivityClockSync: Boolean = false
 
     var screen: AppScreen by mutableStateOf<AppScreen>(AppScreen.Home)
         private set
@@ -380,6 +385,31 @@ class TransitAppModel(
         )
     }
 
+    fun setDebugModeEnabled(enabled: Boolean) {
+        if (!enabled) {
+            debugClockOffsetSeconds = 0
+            updateClock()
+            forceLiveActivityClockSync = true
+        }
+        updateUserData(
+            userData.copy(
+                settings = userData.settings.copy(debugModeEnabled = enabled),
+            ),
+        )
+        syncLiveActivity(forceClockSync = !enabled)
+    }
+
+    fun debugSkipToNextWatchTransition() {
+        if (!userData.settings.debugModeEnabled) return
+        if (userData.activeSession == null) return
+        val nextTransitionSeconds = nextDebugTransitionSeconds() ?: return
+        val targetSeconds = (nextTransitionSeconds - DEBUG_SKIP_LEAD_SECONDS).mod(SECONDS_PER_DAY)
+        val actualSeconds = timeProvider.nowSecondsOfDay().mod(SECONDS_PER_DAY)
+        debugClockOffsetSeconds = secondsBetween(actualSeconds, targetSeconds)
+        forceLiveActivityClockSync = true
+        tick()
+    }
+
     fun startWatch(commuteId: String, manual: Boolean = true) {
         val active = userData.activeSession
         if (active != null && active.commuteId == commuteId && manual) {
@@ -491,7 +521,7 @@ class TransitAppModel(
             userData.copy(
                 activeSession = session.copy(
                     silenced = true,
-                    leavingAtMinutes = timeProvider.nowMinutesOfDay(),
+                    leavingAtMinutes = nowMinutes,
                     leavingDepartureTimeMinutes = departureTimeMinutes,
                     leavingGroupId = group.id,
                 ),
@@ -671,7 +701,7 @@ class TransitAppModel(
     }
 
     private fun updateClock() {
-        nowSecondsOfDay = timeProvider.nowSecondsOfDay()
+        nowSecondsOfDay = (timeProvider.nowSecondsOfDay() + debugClockOffsetSeconds).mod(SECONDS_PER_DAY)
         nowMinutes = nowSecondsOfDay / 60
     }
 
@@ -680,6 +710,26 @@ class TransitAppModel(
 
     private fun minutesBetween(start: Int, end: Int): Int =
         if (end >= start) end - start else (MINUTES_PER_DAY - start) + end
+
+    private fun secondsBetween(start: Int, end: Int): Int =
+        if (end >= start) end - start else (SECONDS_PER_DAY - start) + end
+
+    private fun nextDebugTransitionSeconds(): Int? {
+        val state = watchUiState() ?: return null
+        val groupTransitions = state.groups.flatMap { group ->
+            listOf(group.windowOpenMinutes * 60, group.finalCallMinutes * 60)
+        }
+        val leavingTransition = state.leavingDepartureTimeMinutes
+            ?.takeIf { state.silenced }
+            ?.let { it * 60 }
+        val transitions = (groupTransitions + listOfNotNull(leavingTransition))
+            .map { it.mod(SECONDS_PER_DAY) }
+            .distinct()
+
+        return transitions
+            .filter { secondsBetween(nowSecondsOfDay, it) > DEBUG_SKIP_LEAD_SECONDS }
+            .minByOrNull { secondsBetween(nowSecondsOfDay, it) }
+    }
 
     private fun currentLiveSnapshot(): LiveActivitySnapshot? {
         val session = userData.activeSession ?: return null
@@ -711,14 +761,18 @@ class TransitAppModel(
             group = group,
             status = status,
             walkingMinutes = walking,
-        )
+        ).withCurrentClock()
         liveActivityController.start(snapshot)
         lastLiveSnapshot = snapshot
     }
 
-    private fun syncLiveActivity(skippedFallbackReason: LiveActivityEndReason? = null) {
+    private fun syncLiveActivity(
+        skippedFallbackReason: LiveActivityEndReason? = null,
+        forceClockSync: Boolean = false,
+    ) {
         if (!liveActivityController.isSupported()) return
         val snapshot = currentLiveSnapshot()
+        val shouldForceClockSync = forceClockSync || forceLiveActivityClockSync
         when {
             snapshot == null && lastLiveSnapshot != null -> {
                 liveActivityController.end(
@@ -728,14 +782,17 @@ class TransitAppModel(
                 lastLiveSnapshot = null
             }
             snapshot != null && lastLiveSnapshot == null -> {
-                liveActivityController.start(snapshot)
-                lastLiveSnapshot = snapshot
+                val syncedSnapshot = snapshot.withCurrentClock()
+                liveActivityController.start(syncedSnapshot)
+                lastLiveSnapshot = syncedSnapshot
             }
-            snapshot != null && snapshot != lastLiveSnapshot -> {
-                liveActivityController.update(snapshot)
-                lastLiveSnapshot = snapshot
+            snapshot != null && (shouldForceClockSync || !snapshot.sameLiveContentAs(lastLiveSnapshot)) -> {
+                val syncedSnapshot = snapshot.withCurrentClock()
+                liveActivityController.update(syncedSnapshot)
+                lastLiveSnapshot = syncedSnapshot
             }
         }
+        forceLiveActivityClockSync = false
     }
 
     private fun endLiveActivity(reason: LiveActivityEndReason) {
@@ -750,12 +807,13 @@ class TransitAppModel(
         if (restored) {
             val snapshot = currentLiveSnapshot()
             if (snapshot != null) {
+                val syncedSnapshot = snapshot.withCurrentClock()
                 if (liveActivityController.isActivityRunning()) {
-                    liveActivityController.update(snapshot)
+                    liveActivityController.update(syncedSnapshot)
                 } else {
-                    liveActivityController.start(snapshot)
+                    liveActivityController.start(syncedSnapshot)
                 }
-                lastLiveSnapshot = snapshot
+                lastLiveSnapshot = syncedSnapshot
             } else if (liveActivityController.isActivityRunning()) {
                 liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
             }
@@ -763,4 +821,10 @@ class TransitAppModel(
             liveActivityController.end(snapshot = null, reason = LiveActivityEndReason.SessionEnded)
         }
     }
+
+    private fun LiveActivitySnapshot.withCurrentClock(): LiveActivitySnapshot =
+        copy(syncedNowSecondsOfDay = nowSecondsOfDay)
+
+    private fun LiveActivitySnapshot.sameLiveContentAs(other: LiveActivitySnapshot?): Boolean =
+        copy(syncedNowSecondsOfDay = null) == other?.copy(syncedNowSecondsOfDay = null)
 }

@@ -2,6 +2,7 @@ package com.samex.kmt_hackathon.wear
 
 import android.Manifest
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -291,13 +292,17 @@ private fun WaterCountdownBackground(
 
 @Composable
 private fun rememberCurrentSecondsOfDay(snapshot: LiveActivitySnapshot): MutableState<Int> {
-    val nowSecondsOfDay = remember(snapshot.commuteId, snapshot.groupId) {
-        mutableStateOf(currentSecondsOfDay())
+    val baseSeconds = snapshot.syncedNowSecondsOfDay ?: currentSecondsOfDay()
+    val nowSecondsOfDay = remember(snapshot.commuteId, snapshot.groupId, snapshot.syncedNowSecondsOfDay) {
+        mutableStateOf(baseSeconds)
     }
-    LaunchedEffect(snapshot.commuteId, snapshot.groupId) {
+    LaunchedEffect(snapshot.commuteId, snapshot.groupId, snapshot.syncedNowSecondsOfDay) {
+        val startedAtRealtimeMillis = SystemClock.elapsedRealtime()
+        val startedAtSeconds = baseSeconds
         while (true) {
             delay(1_000)
-            nowSecondsOfDay.value = currentSecondsOfDay()
+            val elapsedSeconds = ((SystemClock.elapsedRealtime() - startedAtRealtimeMillis) / 1_000L).toInt()
+            nowSecondsOfDay.value = (startedAtSeconds + elapsedSeconds).mod(SECONDS_PER_DAY)
         }
     }
     return nowSecondsOfDay
@@ -440,6 +445,7 @@ private const val KEY_WEAR_DEPARTURE_TIME_MINUTES = "departure_time_minutes"
 private const val KEY_WEAR_WINDOW_OPEN_MINUTES = "window_open_minutes"
 private const val KEY_WEAR_FINAL_CALL_MINUTES = "final_call_minutes"
 private const val KEY_WEAR_WALKING_MINUTES = "walking_minutes"
+private const val KEY_WEAR_SYNCED_NOW_SECONDS = "synced_now_seconds"
 
 internal fun DataMap.isWearLiveActivityActive(): Boolean =
     getBoolean(KEY_WEAR_ACTIVE, false)
@@ -461,5 +467,9 @@ internal fun DataMap.toLiveActivitySnapshot(): LiveActivitySnapshot? {
         windowOpenMinutes = getInt(KEY_WEAR_WINDOW_OPEN_MINUTES),
         finalCallMinutes = getInt(KEY_WEAR_FINAL_CALL_MINUTES),
         walkingMinutes = getInt(KEY_WEAR_WALKING_MINUTES),
+        syncedNowSecondsOfDay = getOptionalInt(KEY_WEAR_SYNCED_NOW_SECONDS),
     )
 }
+
+private fun DataMap.getOptionalInt(key: String): Int? =
+    if (containsKey(key)) getInt(key) else null

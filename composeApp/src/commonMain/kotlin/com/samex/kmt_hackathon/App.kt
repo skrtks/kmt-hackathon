@@ -415,6 +415,7 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
         nowSecondsOfDay = model.nowSecondsOfDay,
         compact = compact,
         routeLabels = commuteRouteLabels(model, state.commute),
+        onHeadlineClick = (model::debugSkipToNextWatchTransition).takeIf { model.userData.settings.debugModeEnabled },
     ) {
         ActionButtons(compact) {
             Button(
@@ -583,6 +584,7 @@ private fun ActiveWatchHero(
     nowSecondsOfDay: Int,
     compact: Boolean,
     routeLabels: List<String>,
+    onHeadlineClick: (() -> Unit)? = null,
     actions: @Composable () -> Unit,
 ) {
     val status = state.currentStatus
@@ -610,6 +612,11 @@ private fun ActiveWatchHero(
             status = status,
             leaveAtMinutes = currentGroup?.windowOpenMinutes,
         )
+    val headlineModifier = if (onHeadlineClick != null) {
+        Modifier.clickable(onClick = hapticClick(onClick = onHeadlineClick))
+    } else {
+        Modifier
+    }
 
     Card(
         modifier = Modifier
@@ -630,6 +637,7 @@ private fun ActiveWatchHero(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     headline,
+                    modifier = headlineModifier,
                     style = statusStyle,
                     fontWeight = FontWeight.Bold,
                     color = contentColor,
@@ -1905,6 +1913,17 @@ private fun SettingsScreen(model: TransitAppModel, modifier: Modifier = Modifier
                 onThemeSelected = model::updateColorTheme,
             )
         }
+        SettingsPanel(
+            title = "Debug",
+            subtitle = "Testing controls for active watch timing.",
+        ) {
+            SettingSwitchRow(
+                label = "Debug mode",
+                description = "Tap the active watch headline to jump to 5 seconds before the next transition.",
+                checked = settings.debugModeEnabled,
+                onCheckedChange = model::setDebugModeEnabled,
+            )
+        }
         BottomNavigationScrollSpacer()
     }
 }
@@ -2716,6 +2735,56 @@ private fun SettingStepperRow(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    label: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = { enabled ->
+                    hapticClick {
+                        onCheckedChange(enabled)
+                    }()
+                },
+            )
         }
     }
 }

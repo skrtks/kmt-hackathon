@@ -100,6 +100,7 @@ data class UserSettings(
     val defaultArrivalBuffer: ArrivalBuffer = ArrivalBuffer(minEarlyMinutes = 1, maxEarlyMinutes = 3),
     val walkingSpeed: WalkingSpeed = WalkingSpeed(metersPerMinute = 80.0),
     val colorTheme: AppColorTheme = AppColorTheme.Sunrise,
+    val debugModeEnabled: Boolean = false,
 )
 
 @Serializable
@@ -178,6 +179,7 @@ data class LiveActivitySnapshot(
     val windowOpenMinutes: Int,
     val finalCallMinutes: Int,
     val walkingMinutes: Int,
+    val syncedNowSecondsOfDay: Int? = null,
 )
 
 enum class LiveActivityEndReason {

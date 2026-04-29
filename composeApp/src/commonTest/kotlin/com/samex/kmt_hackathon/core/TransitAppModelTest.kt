@@ -90,6 +90,81 @@ class TransitAppModelTest {
     }
 
     @Test
+    fun debugModeSettingPersists() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(activeSession = null))
+        val model = model(repository, now = 8 * 60)
+
+        model.load()
+        model.setDebugModeEnabled(true)
+
+        assertEquals(true, model.userData.settings.debugModeEnabled)
+        assertEquals(true, repository.load().settings.debugModeEnabled)
+    }
+
+    @Test
+    fun debugSkipJumpsToTenSecondsBeforeNextWatchTransition() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, now = 8 * 60 + 20)
+
+        model.load()
+        model.setDebugModeEnabled(true)
+        model.debugSkipToNextWatchTransition()
+
+        assertEquals((8 * 60 + 26) * 60 - 5, model.nowSecondsOfDay)
+        assertEquals(8 * 60 + 25, model.nowMinutes)
+
+        model.debugSkipToNextWatchTransition()
+
+        assertEquals((8 * 60 + 28) * 60 - 5, model.nowSecondsOfDay)
+        assertEquals(8 * 60 + 27, model.nowMinutes)
+    }
+
+    @Test
+    fun debugSkipSyncsAdjustedClockToLiveActivityWhenStatusDoesNotChange() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        val liveActivityController = RecordingLiveActivityController()
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(
+            repository = repository,
+            now = 8 * 60 + 20,
+            liveActivityController = liveActivityController,
+        )
+
+        model.load()
+        model.setDebugModeEnabled(true)
+        model.debugSkipToNextWatchTransition()
+
+        val syncedSnapshot = liveActivityController.updates.last()
+        assertEquals(WatchStatus.GetReady, syncedSnapshot.status)
+        assertEquals((8 * 60 + 26) * 60 - 5, syncedSnapshot.syncedNowSecondsOfDay)
+    }
+
+    @Test
+    fun debugSkipRequiresDebugModeAndResetsWhenDisabled() {
+        val store = FakeModelKeyValueStore()
+        val repository = UserDataRepository(store)
+        repository.save(testUserData(startedAutomatically = false))
+        val model = model(repository, now = 8 * 60 + 20)
+
+        model.load()
+        model.debugSkipToNextWatchTransition()
+
+        assertEquals((8 * 60 + 20) * 60, model.nowSecondsOfDay)
+
+        model.setDebugModeEnabled(true)
+        model.debugSkipToNextWatchTransition()
+        model.setDebugModeEnabled(false)
+
+        assertEquals((8 * 60 + 20) * 60, model.nowSecondsOfDay)
+        assertEquals(false, model.userData.settings.debugModeEnabled)
+    }
+
+    @Test
     fun settingsBackReturnsToPreviousScreen() {
         val store = FakeModelKeyValueStore()
         val repository = UserDataRepository(store)
