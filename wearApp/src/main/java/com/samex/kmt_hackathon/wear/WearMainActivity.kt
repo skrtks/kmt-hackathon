@@ -25,7 +25,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
@@ -237,30 +236,6 @@ private fun WearActiveWatchScreen(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF94A3B8),
-        )
-        Spacer(Modifier.height(18.dp))
-        WatchActionButton("I'm leaving", enabled = false)
-        Spacer(Modifier.height(8.dp))
-        WatchActionButton("Skip", enabled = false)
-        Spacer(Modifier.height(8.dp))
-        WatchActionButton("Stop", enabled = false)
-    }
-}
-
-@Composable
-private fun WatchActionButton(label: String, enabled: Boolean) {
-    Button(
-        onClick = {},
-        enabled = enabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
-    ) {
-        Text(
-            text = label,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

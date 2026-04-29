@@ -202,5 +202,5 @@ Active watch:
 - Keep hierarchy shallow: active session, no-active state, and simple commute-start entry points.
 - Keep essential text at 12sp or larger and touch targets at least 48dp.
 - Use short, literal watch copy: `Leave now`, `Final call`, `Leave by <time>`, `No active watch`.
-- Disable or hide watch actions until the corresponding phone command path is wired.
+- Hide watch actions until the corresponding phone command path is wired.
 - Do not put commute setup, place setup, schedule editing, or theme selection on the watch MVP.
