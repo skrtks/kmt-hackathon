@@ -394,6 +394,13 @@ private fun HomeManagementActions(model: TransitAppModel, compact: Boolean) {
         ) {
             ButtonLabel("Places")
         }
+        OutlinedButton(
+            onClick = hapticClick(HapticEffect.Confirmation, model::startDemoLeavingWindow),
+            enabled = model.userData.commutes.isNotEmpty(),
+            modifier = responsiveButtonModifier(compact),
+        ) {
+            ButtonLabel("Demo")
+        }
     }
 }
 

@@ -394,6 +394,61 @@ class TransitAppModel(
         startWatchInternal(commuteId, startedAutomatically = !manual)
     }
 
+    fun startDemoLeavingWindow() {
+        updateClock()
+        val commute = userData.activeSession
+            ?.let { activeSession -> userData.commutes.firstOrNull { it.id == activeSession.commuteId } }
+            ?: userData.commutes.firstOrNull()
+        if (commute == null) {
+            errorMessage = "Create a commute before starting the demo."
+            return
+        }
+
+        val origin = userData.places.firstOrNull { it.id == commute.originPlaceId }
+        val selection = commute.selections.firstOrNull()
+        val line = selection?.let { transitRepository.lineById(it.lineId) }
+        val direction = selection?.let { transitRepository.directionById(it.directionId) }
+        if (origin == null || selection == null || line == null || direction == null) {
+            errorMessage = "The demo needs a valid saved commute."
+            return
+        }
+
+        val windowOpenMinutes = nowMinutes - 1
+        val finalCallMinutes = nowMinutes + 3
+        val departureTimeMinutes = nowMinutes + 5
+        val demoWindow = LeaveWindow(
+            departureId = "demo-${timeProvider.nowSecondsOfDay()}",
+            stopId = commute.stopId,
+            lineId = selection.lineId,
+            lineShortName = line.shortName,
+            directionId = selection.directionId,
+            headsign = direction.headsign,
+            departureTimeMinutes = departureTimeMinutes,
+            windowOpenMinutes = windowOpenMinutes,
+            finalCallMinutes = finalCallMinutes,
+        )
+        val demoGroup = LeaveWindowGroup(
+            id = "demo-${timeProvider.nowSecondsOfDay()}",
+            windows = listOf(demoWindow),
+            windowOpenMinutes = windowOpenMinutes,
+            finalCallMinutes = finalCallMinutes,
+        )
+        val session = PersistedWatchSession(
+            commuteId = commute.id,
+            startedAtMinutes = nowMinutes,
+            silenced = false,
+            skippedGroupIds = emptyList(),
+            startedAutomatically = false,
+        )
+
+        activeGroups = listOf(demoGroup)
+        updateUserData(userData.copy(activeSession = session))
+        notificationScheduler.cancelAll()
+        startLiveActivityForSession(commute, origin)
+        screen = AppScreen.Home
+        errorMessage = null
+    }
+
     fun confirmReplacement() {
         val commuteId = pendingReplacementCommuteId ?: return
         stopActiveSession()
