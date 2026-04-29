@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import com.samex.kmt_hackathon.core.AppScreen
 import com.samex.kmt_hackathon.core.AppColorTheme
 import com.samex.kmt_hackathon.core.CommuteDraft
+import com.samex.kmt_hackathon.core.HapticEffect
 import com.samex.kmt_hackathon.core.MockTransitRepository
 import com.samex.kmt_hackathon.core.NotificationPermissionStatus
 import com.samex.kmt_hackathon.core.PlatformServices
@@ -116,9 +117,78 @@ fun App() {
             model.tick()
         }
     }
+    WatchSessionHaptics(model)
 
     LeaveTheme(theme = model.userData.settings.colorTheme) {
         AppContent(model)
+    }
+}
+
+@Composable
+private fun WatchSessionHaptics(model: TransitAppModel) {
+    val state = model.watchUiState()
+    val group = state?.currentGroup
+    val status = state?.currentStatus
+    var lastGroupId by remember { mutableStateOf<String?>(null) }
+    var lastStatus by remember { mutableStateOf<WatchStatus?>(null) }
+    var lastProgressPulseSecond by remember { mutableStateOf<Int?>(null) }
+    var lastGetReadyMinute by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(group?.id, status, model.nowSecondsOfDay, state?.silenced) {
+        if (group == null || status == null || state.silenced) {
+            lastGroupId = null
+            lastStatus = null
+            lastProgressPulseSecond = null
+            lastGetReadyMinute = null
+            return@LaunchedEffect
+        }
+
+        val progress = leaveWindowProgressFraction(
+            windowOpenMinutes = group.windowOpenMinutes,
+            finalCallMinutes = group.finalCallMinutes,
+            nowSecondsOfDay = model.nowSecondsOfDay,
+        )
+        val getReadyMinute = getReadyHapticMinute(group.windowOpenMinutes, model.nowSecondsOfDay)
+        val getReadyProgress = getReadyHapticProgress(group.windowOpenMinutes, model.nowSecondsOfDay)
+
+        if (lastGroupId != group.id) {
+            lastGroupId = group.id
+            lastStatus = status
+            lastProgressPulseSecond = model.nowSecondsOfDay
+            lastGetReadyMinute = getReadyMinute
+            when (status) {
+                WatchStatus.LeaveNow -> PlatformServices.hapticFeedback().performProgress(progress)
+                WatchStatus.FinalCall -> PlatformServices.hapticFeedback().perform(HapticEffect.Critical)
+                WatchStatus.GetReady,
+                WatchStatus.Missed -> Unit
+            }
+            return@LaunchedEffect
+        }
+
+        if (status != lastStatus) {
+            when (status) {
+                WatchStatus.LeaveNow -> PlatformServices.hapticFeedback().performProgress(progress)
+                WatchStatus.FinalCall -> PlatformServices.hapticFeedback().perform(HapticEffect.Critical)
+                WatchStatus.GetReady,
+                WatchStatus.Missed -> Unit
+            }
+            lastStatus = status
+            lastProgressPulseSecond = model.nowSecondsOfDay
+            lastGetReadyMinute = getReadyMinute
+            return@LaunchedEffect
+        }
+
+        if (status == WatchStatus.GetReady && getReadyMinute != null && getReadyMinute != lastGetReadyMinute) {
+            PlatformServices.hapticFeedback().performProgress(getReadyProgress ?: 0f)
+            lastGetReadyMinute = getReadyMinute
+        }
+
+        if (status == WatchStatus.LeaveNow &&
+            model.nowSecondsOfDay != lastProgressPulseSecond
+        ) {
+            PlatformServices.hapticFeedback().performProgress(progress)
+            lastProgressPulseSecond = model.nowSecondsOfDay
+        }
     }
 }
 
@@ -305,20 +375,20 @@ private fun HomeScreen(model: TransitAppModel) {
 private fun HomeManagementActions(model: TransitAppModel, compact: Boolean) {
     ActionButtons(compact) {
         Button(
-            onClick = { model.beginCommuteSetup() },
+            onClick = hapticClick { model.beginCommuteSetup() },
             enabled = model.userData.places.isNotEmpty(),
             modifier = responsiveButtonModifier(compact),
         ) {
             ButtonLabel("Add commute")
         }
         OutlinedButton(
-            onClick = { model.beginPlaceEditor() },
+            onClick = hapticClick { model.beginPlaceEditor() },
             modifier = responsiveButtonModifier(compact),
         ) {
             ButtonLabel("Add place")
         }
         OutlinedButton(
-            onClick = { model.navigate(AppScreen.Places) },
+            onClick = hapticClick { model.navigate(AppScreen.Places) },
             modifier = responsiveButtonModifier(compact),
         ) {
             ButtonLabel("Places")
@@ -340,21 +410,21 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
     ) {
         ActionButtons(compact) {
             Button(
-                onClick = model::markLeaving,
+                onClick = hapticClick(HapticEffect.Confirmation, model::markLeaving),
                 enabled = !state.silenced,
                 modifier = responsiveButtonModifier(compact),
             ) {
                 ButtonLabel("I'm leaving")
             }
             OutlinedButton(
-                onClick = model::skipCurrentGroup,
+                onClick = hapticClick(HapticEffect.Warning, model::skipCurrentGroup),
                 enabled = state.currentGroup != null && !state.silenced,
                 modifier = responsiveButtonModifier(compact),
             ) {
                 ButtonLabel("Skip this departure")
             }
             OutlinedButton(
-                onClick = model::stopActiveSession,
+                onClick = hapticClick(HapticEffect.Warning, model::stopActiveSession),
                 modifier = responsiveButtonModifier(compact),
             ) {
                 ButtonLabel("Stop")
@@ -370,7 +440,7 @@ private fun ActiveWatchSection(model: TransitAppModel, state: WatchUiState, comp
         ) {
             Text("Next windows", style = MaterialTheme.typography.titleMedium)
             if (canExpandWindows) {
-                TextButton(onClick = { showMoreWindows = !showMoreWindows }) {
+                TextButton(onClick = hapticClick { showMoreWindows = !showMoreWindows }) {
                     ButtonLabel(if (showMoreWindows) "Show fewer" else "Show more")
                 }
             }
@@ -871,6 +941,18 @@ private fun leaveWindowProgressFraction(windowOpenMinutes: Int, finalCallMinutes
         .coerceIn(0f, 1f)
 }
 
+private fun getReadyHapticMinute(windowOpenMinutes: Int, nowSecondsOfDay: Int): Int? {
+    val secondsUntilOpen = windowOpenMinutes * 60 - nowSecondsOfDay
+    if (secondsUntilOpen !in 1..180) return null
+    return ((secondsUntilOpen + 59) / 60).coerceIn(1, 3)
+}
+
+private fun getReadyHapticProgress(windowOpenMinutes: Int, nowSecondsOfDay: Int): Float? {
+    val secondsUntilOpen = windowOpenMinutes * 60 - nowSecondsOfDay
+    if (secondsUntilOpen !in 1..180) return null
+    return (1f - secondsUntilOpen / 180f).coerceIn(0f, 1f)
+}
+
 private fun commuteOriginName(model: TransitAppModel, commute: SavedCommute): String =
     model.userData.places.firstOrNull { it.id == commute.originPlaceId }?.name ?: "Unknown origin"
 
@@ -898,7 +980,7 @@ private fun PlaceEditor(model: TransitAppModel) {
             ActionButtons(compact) {
                 model.presetPlaces.forEach { preset ->
                     OutlinedButton(
-                        onClick = { model.applyPresetPlace(preset) },
+                        onClick = hapticClick { model.applyPresetPlace(preset) },
                         modifier = responsiveButtonModifier(compact),
                     ) {
                         ButtonLabel(preset.name)
@@ -933,12 +1015,15 @@ private fun PlaceEditor(model: TransitAppModel) {
         }
         CompactAware { compact ->
             ActionButtons(compact) {
-                Button(onClick = model::savePlace, modifier = responsiveButtonModifier(compact)) {
+                Button(
+                    onClick = hapticResultClick(model, onClick = model::savePlace),
+                    modifier = responsiveButtonModifier(compact),
+                ) {
                     ButtonLabel("Save place")
                 }
                 if (!model.placeDraft.onboarding) {
                     OutlinedButton(
-                        onClick = { model.navigate(AppScreen.Home) },
+                        onClick = hapticClick { model.navigate(AppScreen.Home) },
                         modifier = responsiveButtonModifier(compact),
                     ) {
                         ButtonLabel("Cancel")
@@ -1003,7 +1088,7 @@ private fun CommuteSetup(model: TransitAppModel) {
                 onBack = { step = previousSetupStep(step) },
                 onNext = { step = nextSetupStep(step) },
                 onCancel = { model.navigate(AppScreen.Home) },
-                onSave = model::saveCommute,
+                onSave = hapticResultClick(model, onClick = model::saveCommute),
             )
             BottomNavigationScrollSpacer()
         }
@@ -1095,13 +1180,13 @@ private fun CommuteEditScreen(model: TransitAppModel) {
 
             ActionButtons(compact) {
                 OutlinedButton(
-                    onClick = { model.navigate(AppScreen.Home) },
+                    onClick = hapticClick { model.navigate(AppScreen.Home) },
                     modifier = responsiveButtonModifier(compact),
                 ) {
                     ButtonLabel("Cancel")
                 }
                 Button(
-                    onClick = model::saveCommute,
+                    onClick = hapticResultClick(model, onClick = model::saveCommute),
                     enabled = canSaveCommuteDraft(draft),
                     modifier = responsiveButtonModifier(compact),
                 ) {
@@ -1450,6 +1535,7 @@ private fun WeekdayGrid(model: TransitAppModel, draft: CommuteDraft, compact: Bo
                     val modifier = Modifier.weight(1f)
                     val onClick = {
                         val days = if (selected) draft.scheduleDays - day else draft.scheduleDays + day
+                        PlatformServices.hapticFeedback().perform(HapticEffect.Selection)
                         model.updateCommuteDraft(draft.copy(scheduleDays = days))
                     }
                     if (selected) {
@@ -1477,7 +1563,7 @@ private fun SetupChoice(label: String, selected: Boolean, onClick: () -> Unit) {
     }
     if (selected) {
         Button(
-            onClick = onClick,
+            onClick = hapticClick(onClick = onClick),
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(
@@ -1489,7 +1575,7 @@ private fun SetupChoice(label: String, selected: Boolean, onClick: () -> Unit) {
         }
     } else {
         OutlinedButton(
-            onClick = onClick,
+            onClick = hapticClick(onClick = onClick),
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
         ) {
@@ -1520,13 +1606,17 @@ private fun SetupNavigation(
 ) {
     ActionButtons(compact) {
         OutlinedButton(
-            onClick = if (step == CommuteSetupStep.Origin) onCancel else onBack,
+            onClick = hapticClick(onClick = if (step == CommuteSetupStep.Origin) onCancel else onBack),
             modifier = responsiveButtonModifier(compact),
         ) {
             ButtonLabel(if (step == CommuteSetupStep.Origin) "Cancel" else "Back")
         }
         Button(
-            onClick = if (step == CommuteSetupStep.Review) onSave else onNext,
+            onClick = if (step == CommuteSetupStep.Review) {
+                onSave
+            } else {
+                hapticClick(onClick = onNext)
+            },
             enabled = if (step == CommuteSetupStep.Review) canSave else canContinue,
             modifier = responsiveButtonModifier(compact),
         ) {
@@ -1681,13 +1771,13 @@ private fun PlacesScreen(model: TransitAppModel) {
         CompactAware { compact ->
             ActionButtons(compact) {
                 Button(
-                    onClick = { model.beginPlaceEditor() },
+                    onClick = hapticClick { model.beginPlaceEditor() },
                     modifier = responsiveButtonModifier(compact),
                 ) {
                     ButtonLabel("Add place")
                 }
                 OutlinedButton(
-                    onClick = { model.navigate(AppScreen.Home) },
+                    onClick = hapticClick { model.navigate(AppScreen.Home) },
                     modifier = responsiveButtonModifier(compact),
                 ) {
                     ButtonLabel("Back")
@@ -1710,7 +1800,7 @@ private fun PlacesScreen(model: TransitAppModel) {
                         ) {
                             PlaceSummary(place.name, "${place.location.latitude}, ${place.location.longitude}")
                             OutlinedButton(
-                                onClick = { model.deletePlace(place.id) },
+                                onClick = hapticClick(HapticEffect.Warning) { model.deletePlace(place.id) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 ButtonLabel("Delete")
@@ -1723,7 +1813,7 @@ private fun PlacesScreen(model: TransitAppModel) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             PlaceSummary(place.name, "${place.location.latitude}, ${place.location.longitude}")
-                            OutlinedButton(onClick = { model.deletePlace(place.id) }) {
+                            OutlinedButton(onClick = hapticClick(HapticEffect.Warning) { model.deletePlace(place.id) }) {
                                 ButtonLabel("Delete")
                             }
                         }
@@ -1985,7 +2075,7 @@ private fun ThemeChoiceCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = hapticClick(onClick = onClick)),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.large,
@@ -2254,10 +2344,16 @@ private fun ReplacementPrompt(onConfirm: () -> Unit, onCancel: () -> Unit) {
             )
             CompactAware { compact ->
                 ActionButtons(compact) {
-                    Button(onClick = onConfirm, modifier = responsiveButtonModifier(compact)) {
+                    Button(
+                        onClick = hapticClick(HapticEffect.Warning, onConfirm),
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
                         ButtonLabel("Replace")
                     }
-                    OutlinedButton(onClick = onCancel, modifier = responsiveButtonModifier(compact)) {
+                    OutlinedButton(
+                        onClick = hapticClick(onClick = onCancel),
+                        modifier = responsiveButtonModifier(compact),
+                    ) {
                         ButtonLabel("Keep current")
                     }
                 }
@@ -2278,7 +2374,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 private fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(
-            onClick = onMinus,
+            onClick = hapticClick(onClick = onMinus),
             modifier = Modifier.size(48.dp),
             shape = CircleShape,
             contentPadding = PaddingValues(0.dp),
@@ -2286,7 +2382,7 @@ private fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit) {
             StepperMark(isPlus = false)
         }
         Button(
-            onClick = onPlus,
+            onClick = hapticClick(onClick = onPlus),
             modifier = Modifier.size(48.dp),
             shape = CircleShape,
             contentPadding = PaddingValues(0.dp),
@@ -2367,6 +2463,24 @@ private fun ActionButtons(compact: Boolean, content: @Composable () -> Unit) {
             content()
         }
     }
+}
+
+private fun hapticClick(
+    effect: HapticEffect = HapticEffect.Selection,
+    onClick: () -> Unit,
+): () -> Unit = {
+    PlatformServices.hapticFeedback().perform(effect)
+    onClick()
+}
+
+private fun hapticResultClick(
+    model: TransitAppModel,
+    successEffect: HapticEffect = HapticEffect.Confirmation,
+    onClick: () -> Unit,
+): () -> Unit = {
+    onClick()
+    val effect = if (model.errorMessage == null) successEffect else HapticEffect.Error
+    PlatformServices.hapticFeedback().perform(effect)
 }
 
 private fun responsiveButtonModifier(compact: Boolean): Modifier =
@@ -2468,20 +2582,20 @@ private fun CommuteCardActions(
             Spacer(Modifier.width(8.dp))
             Switch(
                 checked = autoStartEnabled,
-                onCheckedChange = { onAutoStartChange() },
+                onCheckedChange = { hapticClick(onClick = onAutoStartChange)() },
                 enabled = scheduleEnabled,
             )
         }
     }
     val actions: @Composable () -> Unit = {
-        OutlinedButton(onClick = onEdit, modifier = responsiveButtonModifier(compact)) {
+        OutlinedButton(onClick = hapticClick(onClick = onEdit), modifier = responsiveButtonModifier(compact)) {
             ButtonLabel("Edit")
         }
-        OutlinedButton(onClick = onDelete, modifier = responsiveButtonModifier(compact)) {
+        OutlinedButton(onClick = hapticClick(HapticEffect.Warning, onDelete), modifier = responsiveButtonModifier(compact)) {
             ButtonLabel("Delete")
         }
         Button(
-            onClick = onStart,
+            onClick = hapticClick(HapticEffect.Confirmation, onStart),
             enabled = startEnabled,
             modifier = responsiveButtonModifier(compact),
         ) {

@@ -14,7 +14,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -46,6 +50,8 @@ actual object PlatformServices {
     actual fun timeProvider(): TimeProvider = AndroidTimeProvider
 
     actual fun liveActivityController(): LiveActivityController = AndroidLiveActivityController(requireContext())
+
+    actual fun hapticFeedback(): HapticFeedbackController = AndroidHapticFeedbackController(requireContext()) { activity }
 
     actual fun isWearDevice(): Boolean = isWearDevice(requireContext())
 
@@ -92,6 +98,99 @@ private object AndroidTimeProvider : TimeProvider {
         }
     }
 }
+
+private class AndroidHapticFeedbackController(
+    private val context: Context,
+    private val activityProvider: () -> ComponentActivity?,
+) : HapticFeedbackController {
+    override fun perform(effect: HapticEffect) {
+        val view = activityProvider()?.window?.decorView ?: return
+        if (effect == HapticEffect.Critical) {
+            performCriticalHaptic(context, view)
+            return
+        }
+        view.performHapticFeedback(hapticFeedbackConstant(effect))
+    }
+
+    override fun performProgress(progress: Float) {
+        val view = activityProvider()?.window?.decorView ?: return
+        performProgressHaptic(context, view, progress)
+    }
+}
+
+private fun performCriticalHaptic(context: Context, view: android.view.View) {
+    val vibrator = systemVibrator(context)
+    if (vibrator != null && vibrator.hasVibrator()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createWaveform(
+                    longArrayOf(0L, 120L, 70L, 220L),
+                    intArrayOf(0, 255, 0, 255),
+                    -1,
+                ),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(longArrayOf(0L, 120L, 70L, 220L), -1)
+        }
+    }
+    view.performHapticFeedback(hapticFeedbackConstant(HapticEffect.Critical))
+}
+
+private fun performProgressHaptic(context: Context, view: android.view.View, progress: Float) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    val vibrator = systemVibrator(context)
+    if (vibrator == null || !vibrator.hasVibrator()) {
+        view.performHapticFeedback(hapticFeedbackConstant(HapticEffect.ProgressTick))
+        return
+    }
+
+    val leadPulseMs = 28L + (72L * clampedProgress).toLong()
+    val gapMs = (130L - (80L * clampedProgress).toLong()).coerceAtLeast(45L)
+    val followPulseMs = 20L + (90L * clampedProgress).toLong()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val leadAmplitude = (45 + (140 * clampedProgress).toInt()).coerceIn(1, 255)
+        val followAmplitude = (70 + (185 * clampedProgress).toInt()).coerceIn(1, 255)
+        vibrator.vibrate(
+            VibrationEffect.createWaveform(
+                longArrayOf(0L, leadPulseMs, gapMs, followPulseMs),
+                intArrayOf(0, leadAmplitude, 0, followAmplitude),
+                -1,
+            ),
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(longArrayOf(0L, leadPulseMs, gapMs, followPulseMs), -1)
+    }
+}
+
+private fun systemVibrator(context: Context): Vibrator? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+
+private fun hapticFeedbackConstant(effect: HapticEffect): Int =
+    when (effect) {
+        HapticEffect.Selection,
+        HapticEffect.ProgressTick -> HapticFeedbackConstants.CLOCK_TICK
+        HapticEffect.Confirmation ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                HapticFeedbackConstants.CONFIRM
+            } else {
+                HapticFeedbackConstants.VIRTUAL_KEY
+            }
+        HapticEffect.Critical,
+        HapticEffect.Warning,
+        HapticEffect.Error ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                HapticFeedbackConstants.REJECT
+            } else {
+                HapticFeedbackConstants.LONG_PRESS
+            }
+    }
 
 private class AndroidNotificationScheduler(
     private val context: Context,

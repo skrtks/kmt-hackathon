@@ -8,6 +8,11 @@ import platform.Foundation.NSCalendarUnitWeekday
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateComponents
 import platform.Foundation.NSUserDefaults
+import platform.UIKit.UIImpactFeedbackGenerator
+import platform.UIKit.UIImpactFeedbackStyle
+import platform.UIKit.UINotificationFeedbackGenerator
+import platform.UIKit.UINotificationFeedbackType
+import platform.UIKit.UISelectionFeedbackGenerator
 import platform.UserNotifications.UNAuthorizationOptionAlert
 import platform.UserNotifications.UNAuthorizationOptionSound
 import platform.UserNotifications.UNAuthorizationStatusAuthorized
@@ -28,6 +33,8 @@ actual object PlatformServices {
 
     actual fun liveActivityController(): LiveActivityController = IosLiveActivityController
 
+    actual fun hapticFeedback(): HapticFeedbackController = IosHapticFeedbackController
+
     actual fun isWearDevice(): Boolean = false
 }
 
@@ -38,6 +45,43 @@ private object IosKeyValueStore : KeyValueStore {
 
     override fun putString(key: String, value: String) {
         defaults.setObject(value, forKey = key)
+    }
+}
+
+private object IosHapticFeedbackController : HapticFeedbackController {
+    override fun perform(effect: HapticEffect) {
+        when (effect) {
+            HapticEffect.Selection,
+            HapticEffect.ProgressTick -> UISelectionFeedbackGenerator().run {
+                prepare()
+                selectionChanged()
+            }
+            HapticEffect.Confirmation -> UINotificationFeedbackGenerator().run {
+                prepare()
+                notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeSuccess)
+            }
+            HapticEffect.Warning -> UINotificationFeedbackGenerator().run {
+                prepare()
+                notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeWarning)
+            }
+            HapticEffect.Critical,
+            HapticEffect.Error -> UINotificationFeedbackGenerator().run {
+                prepare()
+                notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeError)
+            }
+        }
+    }
+
+    override fun performProgress(progress: Float) {
+        val style = when {
+            progress >= 0.75f -> UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy
+            progress >= 0.40f -> UIImpactFeedbackStyle.UIImpactFeedbackStyleMedium
+            else -> UIImpactFeedbackStyle.UIImpactFeedbackStyleLight
+        }
+        UIImpactFeedbackGenerator(style = style).run {
+            prepare()
+            impactOccurred()
+        }
     }
 }
 

@@ -13,6 +13,8 @@ actual object PlatformServices {
 
     actual fun liveActivityController(): LiveActivityController = NoopLiveActivityController
 
+    actual fun hapticFeedback(): HapticFeedbackController = NoopHapticFeedbackController
+
     actual fun isWearDevice(): Boolean = false
 }
 

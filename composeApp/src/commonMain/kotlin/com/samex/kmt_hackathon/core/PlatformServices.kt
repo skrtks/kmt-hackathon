@@ -34,6 +34,20 @@ interface LiveActivityController {
     fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason)
 }
 
+enum class HapticEffect {
+    Selection,
+    ProgressTick,
+    Confirmation,
+    Warning,
+    Critical,
+    Error,
+}
+
+interface HapticFeedbackController {
+    fun perform(effect: HapticEffect)
+    fun performProgress(progress: Float) = perform(HapticEffect.ProgressTick)
+}
+
 object NoopLiveActivityController : LiveActivityController {
     override fun isSupported(): Boolean = false
     override fun isActivityRunning(): Boolean = false
@@ -42,10 +56,15 @@ object NoopLiveActivityController : LiveActivityController {
     override fun end(snapshot: LiveActivitySnapshot?, reason: LiveActivityEndReason) = Unit
 }
 
+object NoopHapticFeedbackController : HapticFeedbackController {
+    override fun perform(effect: HapticEffect) = Unit
+}
+
 expect object PlatformServices {
     fun keyValueStore(): KeyValueStore
     fun notificationScheduler(): NotificationScheduler
     fun timeProvider(): TimeProvider
     fun liveActivityController(): LiveActivityController
+    fun hapticFeedback(): HapticFeedbackController
     fun isWearDevice(): Boolean
 }
