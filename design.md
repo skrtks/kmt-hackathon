@@ -63,6 +63,7 @@ Wear design principles:
 
 - Show the active leave decision first.
 - Use black app and tile backgrounds.
+- Use the flat blue draining water-level background only on the active watch screen as a countdown to final call.
 - Keep screens vertical, shallow, and glanceable.
 - Keep setup and configuration on the phone.
 - Use Tile and Ongoing Activity surfaces for re-entry into the active watch state.

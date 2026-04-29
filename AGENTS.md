@@ -90,6 +90,7 @@ Current first-version app architecture:
 - The Wear manifest declares `<uses-feature android:name="android.hardware.type.watch" />` and `com.google.android.wearable.standalone=false` for the companion MVP.
 - The first Wear surface reads the phone-published active watch `LiveActivitySnapshot` from the Wear Data Layer path `/transit-live-activity`.
 - The current Wear active-session screen is read-only; do not add placeholder action buttons before the phone command path is implemented.
+- The active Wear screen uses a flat blue water-level countdown background that drains from full at window open to empty at final call.
 - Wear Ongoing Activity support lives in `wearApp/.../WearOngoingActivity.kt`; `WearMainActivity` and `WearLiveActivitySyncService` post/cancel the local ongoing notification from active snapshots.
 - Keep the phone app as the source of truth for saved commutes, active sessions, notification scheduling, and transit refresh until a standalone watch product scope is explicitly planned.
 - Wear UI should use black background, Wear Material3 components, `TimeText`, 48dp touch targets, and shallow vertical flows.

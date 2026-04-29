@@ -5,6 +5,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +48,8 @@ import com.google.android.gms.wearable.Wearable
 import com.samex.kmt_hackathon.core.LiveActivitySnapshot
 import com.samex.kmt_hackathon.core.WatchStatus
 import com.samex.kmt_hackathon.core.formatMinutesOfDay
+import kotlinx.coroutines.delay
+import java.util.Calendar
 
 class WearMainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private val notificationPermissionLauncher =
@@ -144,8 +155,11 @@ private fun WearApp(syncState: WearSyncState, snapshot: LiveActivitySnapshot?) {
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            TimeText()
             if (snapshot != null) {
+                WaterCountdownBackground(
+                    snapshot = snapshot,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 WearActiveWatchScreen(
                     snapshot = snapshot,
                     modifier = Modifier.fillMaxSize(),
@@ -153,6 +167,7 @@ private fun WearApp(syncState: WearSyncState, snapshot: LiveActivitySnapshot?) {
             } else {
                 WearEmptyState(syncState = syncState, modifier = Modifier.fillMaxSize())
             }
+            TimeText()
         }
     }
 }
@@ -196,6 +211,55 @@ private fun WearEmptyState(syncState: WearSyncState, modifier: Modifier = Modifi
             color = Color(0xFFCBD5E1),
         )
     }
+}
+
+@Composable
+private fun WaterCountdownBackground(
+    snapshot: LiveActivitySnapshot,
+    modifier: Modifier = Modifier,
+) {
+    var nowSecondsOfDay by rememberCurrentSecondsOfDay(snapshot)
+    val elapsedFraction by animateFloatAsState(
+        targetValue = leaveWindowElapsedFraction(
+            snapshot = snapshot,
+            nowSecondsOfDay = nowSecondsOfDay,
+        ),
+        animationSpec = tween(durationMillis = 1_000, easing = LinearEasing),
+        label = "waterCountdownLevel",
+    )
+    val waterColor = Color(0xFF0369A1)
+    val waterEdgeColor = Color(0xFF38BDF8)
+
+    Canvas(modifier = modifier) {
+        val waterTop = size.height * elapsedFraction.coerceIn(0f, 1f)
+        if (waterTop < size.height) {
+            drawRect(
+                color = waterColor,
+                topLeft = Offset(x = 0f, y = waterTop),
+                size = Size(width = size.width, height = size.height - waterTop),
+            )
+            drawLine(
+                color = waterEdgeColor,
+                start = Offset(x = 0f, y = waterTop),
+                end = Offset(x = size.width, y = waterTop),
+                strokeWidth = 2.dp.toPx(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberCurrentSecondsOfDay(snapshot: LiveActivitySnapshot): MutableState<Int> {
+    val nowSecondsOfDay = remember(snapshot.commuteId, snapshot.groupId) {
+        mutableStateOf(currentSecondsOfDay())
+    }
+    LaunchedEffect(snapshot.commuteId, snapshot.groupId) {
+        while (true) {
+            delay(1_000)
+            nowSecondsOfDay.value = currentSecondsOfDay()
+        }
+    }
+    return nowSecondsOfDay
 }
 
 @Composable
@@ -272,6 +336,45 @@ private fun statusAccent(status: WatchStatus): Color =
         WatchStatus.Missed -> Color(0xFFFDE68A)
     }
 
+private fun leaveWindowElapsedFraction(snapshot: LiveActivitySnapshot, nowSecondsOfDay: Int): Float =
+    when (snapshot.status) {
+        WatchStatus.GetReady -> 0f
+        WatchStatus.FinalCall,
+        WatchStatus.Missed -> 1f
+        WatchStatus.LeaveNow -> {
+            val windowOpenSeconds = snapshot.windowOpenMinutes * SECONDS_PER_MINUTE
+            val finalCallSeconds = snapshot.finalCallMinutes * SECONDS_PER_MINUTE
+            val totalSeconds = secondsBetween(windowOpenSeconds, finalCallSeconds).coerceAtLeast(1)
+            val elapsedSeconds = elapsedSecondsInWindow(
+                startSeconds = windowOpenSeconds,
+                endSeconds = finalCallSeconds,
+                nowSeconds = nowSecondsOfDay,
+            )
+            (elapsedSeconds / totalSeconds.toFloat()).coerceIn(0f, 1f)
+        }
+    }
+
+private fun currentSecondsOfDay(): Int {
+    val calendar = Calendar.getInstance()
+    return (calendar.get(Calendar.HOUR_OF_DAY) * MINUTES_PER_HOUR + calendar.get(Calendar.MINUTE)) *
+        SECONDS_PER_MINUTE + calendar.get(Calendar.SECOND)
+}
+
+private fun secondsBetween(startSeconds: Int, endSeconds: Int): Int {
+    val raw = (endSeconds - startSeconds) % SECONDS_PER_DAY
+    return if (raw < 0) raw + SECONDS_PER_DAY else raw
+}
+
+private fun elapsedSecondsInWindow(startSeconds: Int, endSeconds: Int, nowSeconds: Int): Int {
+    val totalSeconds = secondsBetween(startSeconds, endSeconds).coerceAtLeast(1)
+    val elapsedSeconds = secondsBetween(startSeconds, nowSeconds)
+    if (elapsedSeconds <= totalSeconds) return elapsedSeconds
+
+    val secondsUntilStart = secondsBetween(nowSeconds, startSeconds)
+    val secondsSinceEnd = secondsBetween(endSeconds, nowSeconds)
+    return if (secondsUntilStart < secondsSinceEnd) 0 else totalSeconds
+}
+
 private enum class WearSyncState {
     Loading,
     NoActiveWatch,
@@ -279,6 +382,9 @@ private enum class WearSyncState {
     Active,
 }
 
+private const val MINUTES_PER_HOUR = 60
+private const val SECONDS_PER_MINUTE = 60
+private const val SECONDS_PER_DAY = 24 * MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 internal const val WEAR_LIVE_ACTIVITY_PATH = "/transit-live-activity"
 private const val KEY_WEAR_ACTIVE = "active"
 private const val KEY_WEAR_COMMUTE_ID = "commute_id"
