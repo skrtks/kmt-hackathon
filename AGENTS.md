@@ -44,10 +44,12 @@ Platform entry points all call the shared `App()` composable:
 UI uses **Material3** via Compose Multiplatform. Lifecycle/ViewModel from `androidx.lifecycle` works cross-platform via KMP-compatible artifacts.
 
 Design-system notes:
-- `design.md` captures the current Material 3 / M3 Expressive research direction.
+- `design.md` captures the current Material 3 / M3 Expressive design system and how it maps to the implemented app.
+- `style.md` is the day-to-day UI/content style guide. Keep implementation copy, layout rules, theme rules, and component usage aligned with it.
 - `reference/tack-android` is the current local visual reference when present. Do not copy GPL source directly; use it for design and interaction inspiration.
-- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/LeaveTheme.kt` is the shared theme entry point. It defines the selectable MVP color themes, theme-aware watch status colors, shape scale, and typography overrides.
+- `composeApp/src/commonMain/kotlin/com/samex/kmt_hackathon/LeaveTheme.kt` is the shared theme entry point. It defines the selectable MVP color themes (`Sunrise`, `Lagoon`, `Grove`, `Berry`), theme-aware watch status colors, shape scale, and typography overrides.
 - `App.kt` currently owns the first reusable expressive UI primitives (`ActiveWatchHero`, `LeaveWindowProgress`, `RouteChip`, `CommuteSummaryCard`). Prefer extracting them into dedicated UI files as the component set grows.
+- The UI is intentionally flat: do not add shadows. Use color, borders, shape, spacing, and tonal surfaces for hierarchy.
 
 Current first-version app architecture:
 
@@ -55,10 +57,19 @@ Current first-version app architecture:
 - `core/WatchEngine.kt` owns walking-time calculation, leave-window calculation, merge behavior, schedule validation, and notification-plan generation.
 - `core/TransitAppModel.kt` is the shared state holder for onboarding, saved commutes, settings, active watch sessions, and UI actions.
 - Home is the single active-watch destination. Active sessions render as a full dashboard section on Home; there is no separate Watch screen route.
+- Settings is a normal page route opened from Home and closed with a back button. It uses a horizontal slide/fade transition, not a sheet/popover.
+- Commute setup and edit allow exactly one line/direction selection. The persisted `SavedCommute.selections` remains a list for compatibility, but current UI/model behavior enforces a single selected line-direction.
+- The active watch card headline states:
+  - `Leave at <time>` before the leave window opens.
+  - `Leave now` while the window is open.
+  - `Final call` at the final-call minute.
+  - `Departure in <countdown>` after the user taps `I'm leaving`.
+- Tapping `I'm leaving` captures the selected departure/group, silences notifications, shows the departure countdown, and ends the watch when that departure time is reached. Auto-start for that commute is suppressed until the current schedule window ends so it does not immediately restart.
+- Edge-to-edge visuals are allowed at the app root, but scrollable screens need bottom scroll tail space for Android navigation controls. Prefer scroll content insets/spacers over root bottom padding when solving nav-bar overlap.
 - `core/PlatformServices.kt` defines `expect` platform hooks for key-value persistence, notifications, and time.
 - Android/iOS/JVM actual implementations live under the matching platform source sets.
 - Android notifications use `AlarmManager` in `AndroidPlatformServices.kt`. When exact pending-intent alarms are allowed, the app uses them for process-independent delivery. On newer Android installs where `SCHEDULE_EXACT_ALARM` is denied by default, it also schedules a permission-free in-process exact alarm plus an inexact broadcast fallback so near-term smoke tests still fire while preserving a fallback if the process is gone.
-- `core/WatchEngine.WatchCopy` is the single source of truth for notification titles, watch-screen headlines, and Live Activity titles. Notification body copy is shared with the Live Activity body via `WatchEngine.notificationBody` and `liveActivitySnapshot`.
+- `core/WatchEngine.WatchCopy` is the single source of truth for notification titles and Live Activity titles. Active watch card headlines are currently formatted in `App.kt` because they include UI-specific countdown and leave-time presentation. Notification body copy is shared with the Live Activity body via `WatchEngine.notificationBody` and `liveActivitySnapshot`.
 
 ### Live Activity (iOS / watchOS Smart Stack)
 
